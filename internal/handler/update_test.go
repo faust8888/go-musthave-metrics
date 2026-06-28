@@ -5,9 +5,17 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/faust8888/go-musthave-metrics/internal/handler"
 	"github.com/faust8888/go-musthave-metrics/internal/repository"
 )
+
+func newUpdateRouter(store repository.Storage) http.Handler {
+	r := chi.NewRouter()
+	r.Post("/update/{type}/{name}/{value}", handler.Update(store))
+	return r
+}
 
 func TestUpdateHandler(t *testing.T) {
 	tests := []struct {
@@ -28,11 +36,11 @@ func TestUpdateHandler(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := repository.NewMemStorage()
-			h := handler.Update(store)
+			router := newUpdateRouter(store)
 
 			req := httptest.NewRequest(tt.method, tt.path, nil)
 			w := httptest.NewRecorder()
-			h(w, req)
+			router.ServeHTTP(w, req)
 
 			if w.Code != tt.wantCode {
 				t.Errorf("path %s: got status %d, want %d", tt.path, w.Code, tt.wantCode)
@@ -43,13 +51,13 @@ func TestUpdateHandler(t *testing.T) {
 
 func TestUpdateHandlerStorage(t *testing.T) {
 	store := repository.NewMemStorage()
-	h := handler.Update(store)
+	router := newUpdateRouter(store)
 
 	// counter accumulates
 	for _, val := range []string{"10", "20"} {
 		req := httptest.NewRequest(http.MethodPost, "/update/counter/hits/"+val, nil)
 		w := httptest.NewRecorder()
-		h(w, req)
+		router.ServeHTTP(w, req)
 		if w.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d", w.Code)
 		}
@@ -62,7 +70,7 @@ func TestUpdateHandlerStorage(t *testing.T) {
 	for _, val := range []string{"1.1", "2.2"} {
 		req := httptest.NewRequest(http.MethodPost, "/update/gauge/temp/"+val, nil)
 		w := httptest.NewRecorder()
-		h(w, req)
+		router.ServeHTTP(w, req)
 	}
 	if v, ok := store.GetGauge("temp"); !ok || v != 2.2 {
 		t.Errorf("gauge temp: got %f, want 2.2", v)
