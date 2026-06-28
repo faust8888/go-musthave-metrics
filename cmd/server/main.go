@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"net/http"
 
@@ -12,6 +13,9 @@ import (
 )
 
 func main() {
+	addr := flag.String("a", "localhost:8080", "HTTP server address")
+	flag.Parse()
+
 	store := repository.NewMemStorage()
 
 	r := chi.NewRouter()
@@ -21,8 +25,8 @@ func main() {
 	r.Post("/update/{type}/{name}/{value}", handler.Update(store))
 	r.Get("/value/{type}/{name}", handler.Value(store))
 
-	log.Println("Server started on :8080")
-	if err := http.ListenAndServe(":8080", r); err != nil {
+	log.Printf("Server started on %s", *addr)
+	if err := http.ListenAndServe(*addr, r); err != nil {
 		log.Fatal(err)
 	}
 }
