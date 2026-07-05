@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/faust8888/go-musthave-metrics/internal/agent"
@@ -22,6 +26,9 @@ func main() {
 	collector := agent.NewCollector()
 	sender := agent.NewSender(serverURL)
 
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
 	pollTicker := time.NewTicker(pollInterval)
 	reportTicker := time.NewTicker(reportInterval)
 	defer pollTicker.Stop()
@@ -31,6 +38,9 @@ func main() {
 
 	for {
 		select {
+		case <-ctx.Done():
+			log.Println("Agent stopped")
+			return
 		case <-pollTicker.C:
 			collector.Collect()
 		case <-reportTicker.C:

@@ -2,9 +2,15 @@ package agent
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 )
+
+type MetricsProvider interface {
+	Gauges() map[string]float64
+	TakeAndResetPollCount() int64
+}
 
 type Sender struct {
 	serverURL string
@@ -18,7 +24,7 @@ func NewSender(serverURL string) *Sender {
 	}
 }
 
-func (s *Sender) Send(c *Collector) error {
+func (s *Sender) Send(c MetricsProvider) error {
 	gauges := c.Gauges()
 	for name, value := range gauges {
 		url := fmt.Sprintf("%s/update/gauge/%s/%s",
@@ -28,12 +34,11 @@ func (s *Sender) Send(c *Collector) error {
 		}
 	}
 
-	pollCount := c.PollCount()
+	pollCount := c.TakeAndResetPollCount()
 	url := fmt.Sprintf("%s/update/counter/PollCount/%d", s.serverURL, pollCount)
 	if err := s.post(url); err != nil {
 		return err
 	}
-	c.ResetPollCount()
 
 	return nil
 }
@@ -50,5 +55,6 @@ func (s *Sender) post(url string) error {
 		return err
 	}
 	defer resp.Body.Close()
-	return nil
+	_, err = io.Copy(io.Discard, resp.Body)
+	return err
 }

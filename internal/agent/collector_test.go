@@ -42,14 +42,17 @@ func TestCollector_Collect_PopulatesGauges(t *testing.T) {
 	}
 }
 
-func TestCollector_ResetPollCount(t *testing.T) {
+func TestCollector_TakeAndResetPollCount(t *testing.T) {
 	c := agent.NewCollector()
 	c.Collect()
 	c.Collect()
-	c.ResetPollCount()
 
-	if got := c.PollCount(); got != 0 {
-		t.Errorf("PollCount after reset: got %d, want 0", got)
+	got := c.TakeAndResetPollCount()
+	if got != 2 {
+		t.Errorf("TakeAndResetPollCount: got %d, want 2", got)
+	}
+	if after := c.PollCount(); after != 0 {
+		t.Errorf("PollCount after take-reset: got %d, want 0", after)
 	}
 }
 

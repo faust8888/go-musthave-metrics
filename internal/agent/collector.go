@@ -74,8 +74,10 @@ func (c *Collector) PollCount() int64 {
 	return c.pollCount
 }
 
-func (c *Collector) ResetPollCount() {
+func (c *Collector) TakeAndResetPollCount() int64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	v := c.pollCount
 	c.pollCount = 0
+	return v
 }
