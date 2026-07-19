@@ -36,6 +36,8 @@ func main() {
 	r.Get("/", handler.Index(store))
 	r.Post("/update/{type}/{name}/{value}", handler.Update(store))
 	r.Get("/value/{type}/{name}", handler.Value(store))
+	r.Post("/update", handler.UpdateJSON(store))
+	r.Post("/value", handler.ValueJSON(store))
 
 	logger.Info("Server started", zap.String("address", *addr))
 	if err := http.ListenAndServe(*addr, r); err != nil {
