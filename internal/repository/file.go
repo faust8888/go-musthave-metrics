@@ -1,0 +1,89 @@
+package repository
+
+import (
+	"encoding/json"
+	"errors"
+	"os"
+
+	models "github.com/faust8888/go-musthave-metrics/internal/model"
+)
+
+// FileStorage wraps MemStorage and adds Save/Load to a JSON file.
+// When syncWrite is true, every write immediately persists to disk.
+type FileStorage struct {
+	*MemStorage
+	path      string
+	syncWrite bool
+}
+
+func NewFileStorage(path string, syncWrite bool) *FileStorage {
+	return &FileStorage{
+		MemStorage: NewMemStorage(),
+		path:       path,
+		syncWrite:  syncWrite,
+	}
+}
+
+func (fs *FileStorage) UpdateGauge(name string, value float64) {
+	fs.MemStorage.UpdateGauge(name, value)
+	if fs.syncWrite {
+		_ = fs.Save()
+	}
+}
+
+func (fs *FileStorage) UpdateCounter(name string, value int64) {
+	fs.MemStorage.UpdateCounter(name, value)
+	if fs.syncWrite {
+		_ = fs.Save()
+	}
+}
+
+func (fs *FileStorage) Save() error {
+	gauges := fs.GetAllGauges()
+	counters := fs.GetAllCounters()
+
+	metrics := make([]models.Metrics, 0, len(gauges)+len(counters))
+	for name, value := range gauges {
+		v := value
+		metrics = append(metrics, models.Metrics{ID: name, MType: models.Gauge, Value: &v})
+	}
+	for name, delta := range counters {
+		d := delta
+		metrics = append(metrics, models.Metrics{ID: name, MType: models.Counter, Delta: &d})
+	}
+
+	data, err := json.MarshalIndent(metrics, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(fs.path, data, 0644)
+}
+
+func (fs *FileStorage) Load() error {
+	data, err := os.ReadFile(fs.path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	var metrics []models.Metrics
+	if err := json.Unmarshal(data, &metrics); err != nil {
+		return err
+	}
+
+	for _, m := range metrics {
+		switch m.MType {
+		case models.Gauge:
+			if m.Value != nil {
+				fs.MemStorage.UpdateGauge(m.ID, *m.Value)
+			}
+		case models.Counter:
+			if m.Delta != nil {
+				fs.MemStorage.UpdateCounter(m.ID, *m.Delta)
+			}
+		}
+	}
+	return nil
+}
