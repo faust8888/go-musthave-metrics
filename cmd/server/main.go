@@ -7,9 +7,10 @@ import (
 	"os"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	"go.uber.org/zap"
 
 	"github.com/faust8888/go-musthave-metrics/internal/handler"
+	"github.com/faust8888/go-musthave-metrics/internal/middleware"
 	"github.com/faust8888/go-musthave-metrics/internal/repository"
 )
 
@@ -21,16 +22,22 @@ func main() {
 		*addr = v
 	}
 
+	logger, err := zap.NewProduction()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer logger.Sync()
+
 	store := repository.NewMemStorage()
 
 	r := chi.NewRouter()
-	r.Use(middleware.Logger)
+	r.Use(middleware.Logger(logger))
 
 	r.Get("/", handler.Index(store))
 	r.Post("/update/{type}/{name}/{value}", handler.Update(store))
 	r.Get("/value/{type}/{name}", handler.Value(store))
 
-	log.Printf("Server started on %s", *addr)
+	logger.Info("Server started", zap.String("address", *addr))
 	if err := http.ListenAndServe(*addr, r); err != nil {
 		log.Fatal(err)
 	}
