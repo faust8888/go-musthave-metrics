@@ -4,6 +4,7 @@ import (
 	"flag"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -15,6 +16,10 @@ import (
 func main() {
 	addr := flag.String("a", "localhost:8080", "HTTP server address")
 	flag.Parse()
+
+	if v := os.Getenv("ADDRESS"); v != "" {
+		*addr = v
+	}
 
 	store := repository.NewMemStorage()
 

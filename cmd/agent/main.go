@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -18,6 +19,20 @@ func main() {
 	reportSec := flag.Int("r", 10, "report interval in seconds")
 	pollSec := flag.Int("p", 2, "poll interval in seconds")
 	flag.Parse()
+
+	if v := os.Getenv("ADDRESS"); v != "" {
+		*addr = v
+	}
+	if v := os.Getenv("REPORT_INTERVAL"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			*reportSec = n
+		}
+	}
+	if v := os.Getenv("POLL_INTERVAL"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			*pollSec = n
+		}
+	}
 
 	serverURL := fmt.Sprintf("http://%s", *addr)
 	pollInterval := time.Duration(*pollSec) * time.Second
