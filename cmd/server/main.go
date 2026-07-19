@@ -31,6 +31,8 @@ func main() {
 	store := repository.NewMemStorage()
 
 	r := chi.NewRouter()
+	r.Use(middleware.GzipDecompress)
+	r.Use(middleware.GzipCompress)
 	r.Use(middleware.Logger(logger))
 
 	r.Get("/", handler.Index(store))

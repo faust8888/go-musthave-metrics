@@ -1,7 +1,9 @@
 package agent_test
 
 import (
+	"compress/gzip"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -64,10 +66,20 @@ func TestSender_Send(t *testing.T) {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
+		reader := r.Body
+		if r.Header.Get("Content-Encoding") == "gzip" {
+			gr, err := gzip.NewReader(r.Body)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			defer gr.Close()
+			reader = io.NopCloser(gr)
+		}
 		var body struct {
 			MType string `json:"type"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err == nil && body.MType == "counter" {
+		if err := json.NewDecoder(reader).Decode(&body); err == nil && body.MType == "counter" {
 			counterSent = true
 		}
 		w.WriteHeader(http.StatusOK)
