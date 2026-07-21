@@ -60,9 +60,11 @@ func GzipCompress(next http.Handler) http.Handler {
 			return
 		}
 		gz, _ := gzip.NewWriterLevel(w, gzip.BestSpeed)
-		defer gz.Close()
 		grw := &gzipResponseWriter{ResponseWriter: w, gz: gz}
 		next.ServeHTTP(grw, r)
+		if grw.useGzip {
+			gz.Close()
+		}
 	})
 }
 

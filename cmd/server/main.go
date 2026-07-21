@@ -92,7 +92,9 @@ func main() {
 	r.Post("/update/{type}/{name}/{value}", handler.Update(store))
 	r.Get("/value/{type}/{name}", handler.Value(store))
 	r.Post("/update", handler.UpdateJSON(store))
+	r.Post("/update/", handler.UpdateJSON(store))
 	r.Post("/value", handler.ValueJSON(store))
+	r.Post("/value/", handler.ValueJSON(store))
 
 	srv := &http.Server{Addr: *addr, Handler: r}
 
