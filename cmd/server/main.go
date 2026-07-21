@@ -94,8 +94,21 @@ func main() {
 	r.Post("/update", handler.UpdateJSON(store))
 	r.Post("/value", handler.ValueJSON(store))
 
+	srv := &http.Server{Addr: *addr, Handler: r}
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-quit
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			logger.Error("shutdown error", zap.Error(err))
+		}
+	}()
+
 	logger.Info("Server started", zap.String("address", *addr))
-	if err := http.ListenAndServe(*addr, r); err != nil {
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
 }
