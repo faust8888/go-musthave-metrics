@@ -7,11 +7,11 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/faust8888/go-musthave-metrics/internal/agent"
+	"github.com/faust8888/go-musthave-metrics/internal/envconfig"
 )
 
 func main() {
@@ -20,18 +20,12 @@ func main() {
 	pollSec := flag.Int("p", 2, "poll interval in seconds")
 	flag.Parse()
 
-	if v := os.Getenv("ADDRESS"); v != "" {
-		*addr = v
+	envconfig.String("ADDRESS", addr)
+	if err := envconfig.Int("REPORT_INTERVAL", reportSec); err != nil {
+		log.Fatal(err)
 	}
-	if v := os.Getenv("REPORT_INTERVAL"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			*reportSec = n
-		}
-	}
-	if v := os.Getenv("POLL_INTERVAL"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			*pollSec = n
-		}
+	if err := envconfig.Int("POLL_INTERVAL", pollSec); err != nil {
+		log.Fatal(err)
 	}
 
 	serverURL := fmt.Sprintf("http://%s", *addr)

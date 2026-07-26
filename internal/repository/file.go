@@ -3,6 +3,7 @@ package repository
 import (
 	"encoding/json"
 	"errors"
+	iofs "io/fs"
 	"os"
 	"path/filepath"
 
@@ -78,7 +79,7 @@ func (fs *FileStorage) Save() error {
 
 func (fs *FileStorage) Load() error {
 	data, err := os.ReadFile(fs.path)
-	if errors.Is(err, os.ErrNotExist) {
+	if errors.Is(err, iofs.ErrNotExist) {
 		return nil
 	}
 	if err != nil {

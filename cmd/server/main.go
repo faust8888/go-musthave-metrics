@@ -5,18 +5,16 @@ import (
 	"flag"
 	"log"
 	"net/http"
-	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/faust8888/go-musthave-metrics/internal/envconfig"
 	"github.com/faust8888/go-musthave-metrics/internal/handler"
 	"github.com/faust8888/go-musthave-metrics/internal/middleware"
-	"github.com/faust8888/go-musthave-metrics/internal/repository"
 )
 
 func main() {
@@ -26,23 +24,13 @@ func main() {
 	restore := flag.Bool("r", true, "restore metrics from file on start")
 	flag.Parse()
 
-	if v := os.Getenv("ADDRESS"); v != "" {
-		*addr = v
+	envconfig.String("ADDRESS", addr)
+	envconfig.String("FILE_STORAGE_PATH", filePath)
+	if err := envconfig.Int("STORE_INTERVAL", storeInterval); err != nil {
+		log.Fatal(err)
 	}
-	if v := os.Getenv("STORE_INTERVAL"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			*storeInterval = n
-		}
-	}
-	if v := os.Getenv("FILE_STORAGE_PATH"); v != "" {
-		*filePath = v
-	}
-	if v := os.Getenv("RESTORE"); v != "" {
-		b, err := strconv.ParseBool(v)
-		if err != nil {
-			log.Fatalf("invalid RESTORE value: %s", v)
-		}
-		*restore = b
+	if err := envconfig.Bool("RESTORE", restore); err != nil {
+		log.Fatal(err)
 	}
 
 	logger, err := zap.NewProduction()
@@ -51,41 +39,11 @@ func main() {
 	}
 	defer logger.Sync()
 
-	var store repository.Storage
-	if *filePath != "" {
-		fs := repository.NewFileStorage(*filePath, *storeInterval == 0)
-		if *restore {
-			if err := fs.Load(); err != nil {
-				logger.Error("failed to load metrics from file", zap.Error(err))
-			} else {
-				logger.Info("metrics loaded from file", zap.String("path", *filePath))
-			}
-		}
-		store = fs
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
-		if *storeInterval > 0 {
-			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-			defer stop()
-			go func() {
-				ticker := time.NewTicker(time.Duration(*storeInterval) * time.Second)
-				defer ticker.Stop()
-				for {
-					select {
-					case <-ticker.C:
-						if err := fs.Save(); err != nil {
-							logger.Error("failed to save metrics", zap.Error(err))
-						} else {
-							logger.Info("metrics saved", zap.String("path", *filePath))
-						}
-					case <-ctx.Done():
-						return
-					}
-				}
-			}()
-		}
-	} else {
-		store = repository.NewMemStorage()
-	}
+	store, cleanup := newStorage(ctx, *filePath, *storeInterval, *restore, logger)
+	defer cleanup()
 
 	r := chi.NewRouter()
 	r.Use(middleware.GzipDecompress)
@@ -102,13 +60,11 @@ func main() {
 
 	srv := &http.Server{Addr: *addr, Handler: r}
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
-		<-quit
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		<-ctx.Done()
+		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if err := srv.Shutdown(ctx); err != nil {
+		if err := srv.Shutdown(shutCtx); err != nil {
 			logger.Error("shutdown error", zap.Error(err))
 		}
 	}()
