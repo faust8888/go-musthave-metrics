@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 
 	models "github.com/faust8888/go-musthave-metrics/internal/model"
 )
@@ -56,7 +57,23 @@ func (fs *FileStorage) Save() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(fs.path, data, 0644)
+
+	tmp, err := os.CreateTemp(filepath.Dir(fs.path), "metrics-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+
+	if _, err = tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return err
+	}
+	if err = tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	return os.Rename(tmpName, fs.path)
 }
 
 func (fs *FileStorage) Load() error {
