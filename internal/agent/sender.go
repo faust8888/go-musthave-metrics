@@ -49,7 +49,10 @@ func (s *Sender) postJSON(m models.Metrics) error {
 	}
 
 	var buf bytes.Buffer
-	gz, _ := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
+	gz, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
+	if err != nil {
+		return fmt.Errorf("gzip new writer: %w", err)
+	}
 	if _, err = gz.Write(raw); err != nil {
 		return fmt.Errorf("gzip write: %w", err)
 	}
