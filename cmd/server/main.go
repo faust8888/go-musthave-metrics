@@ -38,7 +38,11 @@ func main() {
 		*filePath = v
 	}
 	if v := os.Getenv("RESTORE"); v != "" {
-		*restore = v == "true"
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			log.Fatalf("invalid RESTORE value: %s", v)
+		}
+		*restore = b
 	}
 
 	logger, err := zap.NewProduction()
