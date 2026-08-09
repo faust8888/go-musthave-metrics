@@ -24,5 +24,6 @@ vendor/
 .idea
 .vscode
 
+iteration7_test.go
 task.md
 .DS_Store

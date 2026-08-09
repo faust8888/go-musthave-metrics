@@ -1,6 +1,9 @@
 package agent_test
 
 import (
+	"compress/gzip"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -57,13 +60,28 @@ func TestCollector_TakeAndResetPollCount(t *testing.T) {
 }
 
 func TestSender_Send(t *testing.T) {
-	received := make(map[string]int)
+	var counterSent bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
+		if r.Method != http.MethodPost || r.URL.Path != "/update" {
+			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		received[r.URL.Path]++
+		reader := r.Body
+		if r.Header.Get("Content-Encoding") == "gzip" {
+			gr, err := gzip.NewReader(r.Body)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			defer gr.Close()
+			reader = io.NopCloser(gr)
+		}
+		var body struct {
+			MType string `json:"type"`
+		}
+		if err := json.NewDecoder(reader).Decode(&body); err == nil && body.MType == "counter" {
+			counterSent = true
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -76,20 +94,11 @@ func TestSender_Send(t *testing.T) {
 		t.Fatalf("Send() returned error: %v", err)
 	}
 
-	// PollCount should be reset after send
 	if got := c.PollCount(); got != 0 {
 		t.Errorf("PollCount after Send: got %d, want 0", got)
 	}
 
-	// Counter metric must have been sent
-	found := false
-	for path := range received {
-		if len(path) > 16 && path[:16] == "/update/counter/" {
-			found = true
-			break
-		}
-	}
-	if !found {
+	if !counterSent {
 		t.Error("no counter metric was sent to server")
 	}
 }

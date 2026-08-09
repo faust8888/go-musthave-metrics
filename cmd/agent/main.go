@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/faust8888/go-musthave-metrics/internal/agent"
+	"github.com/faust8888/go-musthave-metrics/internal/envconfig"
 )
 
 func main() {
@@ -18,6 +19,14 @@ func main() {
 	reportSec := flag.Int("r", 10, "report interval in seconds")
 	pollSec := flag.Int("p", 2, "poll interval in seconds")
 	flag.Parse()
+
+	envconfig.String("ADDRESS", addr)
+	if err := envconfig.Int("REPORT_INTERVAL", reportSec); err != nil {
+		log.Fatal(err)
+	}
+	if err := envconfig.Int("POLL_INTERVAL", pollSec); err != nil {
+		log.Fatal(err)
+	}
 
 	serverURL := fmt.Sprintf("http://%s", *addr)
 	pollInterval := time.Duration(*pollSec) * time.Second
