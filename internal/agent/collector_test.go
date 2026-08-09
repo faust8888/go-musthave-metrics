@@ -6,7 +6,11 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	"github.com/faust8888/go-musthave-metrics/internal/retry"
 
 	"github.com/faust8888/go-musthave-metrics/internal/agent"
 )
@@ -108,5 +112,41 @@ func TestSender_Send(t *testing.T) {
 	}
 	if !counterSent {
 		t.Error("no counter metric was included in the batch")
+	}
+}
+
+func TestSender_Send_Retry(t *testing.T) {
+	// Use zero delays so the test finishes instantly.
+	orig := retry.Delays
+	retry.Delays = []time.Duration{0, 0, 0}
+	defer func() { retry.Delays = orig }()
+
+	var attempts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := attempts.Add(1)
+		if n < 3 {
+			// Force a connection-level error by hijacking and closing the socket.
+			hj, ok := w.(http.Hijacker)
+			if !ok {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			conn, _, _ := hj.Hijack()
+			conn.Close()
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := agent.NewCollector()
+	c.Collect()
+
+	s := agent.NewSender(srv.URL)
+	if err := s.Send(c); err != nil {
+		t.Fatalf("Send() failed after retries: %v", err)
+	}
+	if n := attempts.Load(); n != 3 {
+		t.Errorf("expected 3 attempts (1 fail + 1 fail + 1 ok), got %d", n)
 	}
 }

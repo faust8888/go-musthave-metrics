@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 
 	models "github.com/faust8888/go-musthave-metrics/internal/model"
+	"github.com/faust8888/go-musthave-metrics/internal/retry"
 )
 
 type MetricsProvider interface {
@@ -28,7 +31,8 @@ func NewSender(serverURL string) *Sender {
 	}
 }
 
-// Send collects all current metrics and posts them in a single batch request.
+// Send collects all current metrics and posts them in a single batch request,
+// retrying on transient network errors.
 func (s *Sender) Send(c MetricsProvider) error {
 	gauges := c.Gauges()
 	pollCount := c.TakeAndResetPollCount()
@@ -47,24 +51,18 @@ func (s *Sender) Send(c MetricsProvider) error {
 }
 
 func (s *Sender) postBatch(metrics []models.Metrics) error {
-	raw, err := json.Marshal(metrics)
+	// Build the compressed payload once; reuse across retries.
+	payload, err := buildPayload(metrics)
 	if err != nil {
-		return fmt.Errorf("marshal metrics: %w", err)
+		return err
 	}
+	return retry.Do(func() error {
+		return s.doPost(payload)
+	}, isNetworkError)
+}
 
-	var buf bytes.Buffer
-	gz, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
-	if err != nil {
-		return fmt.Errorf("gzip new writer: %w", err)
-	}
-	if _, err = gz.Write(raw); err != nil {
-		return fmt.Errorf("gzip write: %w", err)
-	}
-	if err = gz.Close(); err != nil {
-		return fmt.Errorf("gzip close: %w", err)
-	}
-
-	req, err := http.NewRequest(http.MethodPost, s.serverURL+"/updates/", &buf)
+func (s *Sender) doPost(payload []byte) error {
+	req, err := http.NewRequest(http.MethodPost, s.serverURL+"/updates/", bytes.NewReader(payload))
 	if err != nil {
 		return err
 	}
@@ -79,4 +77,28 @@ func (s *Sender) postBatch(metrics []models.Metrics) error {
 	defer resp.Body.Close()
 	_, err = io.Copy(io.Discard, resp.Body)
 	return err
+}
+
+func buildPayload(metrics []models.Metrics) ([]byte, error) {
+	raw, err := json.Marshal(metrics)
+	if err != nil {
+		return nil, fmt.Errorf("marshal metrics: %w", err)
+	}
+	var buf bytes.Buffer
+	gz, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
+	if err != nil {
+		return nil, fmt.Errorf("gzip new writer: %w", err)
+	}
+	if _, err = gz.Write(raw); err != nil {
+		return nil, fmt.Errorf("gzip write: %w", err)
+	}
+	if err = gz.Close(); err != nil {
+		return nil, fmt.Errorf("gzip close: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
+func isNetworkError(err error) bool {
+	var urlErr *url.Error
+	return errors.As(err, &urlErr)
 }
