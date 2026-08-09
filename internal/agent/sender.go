@@ -28,24 +28,28 @@ func NewSender(serverURL string) *Sender {
 	}
 }
 
+// Send collects all current metrics and posts them in a single batch request.
 func (s *Sender) Send(c MetricsProvider) error {
-	for name, value := range c.Gauges() {
-		v := value
-		m := models.Metrics{ID: name, MType: models.Gauge, Value: &v}
-		if err := s.postJSON(m); err != nil {
-			return err
-		}
-	}
-
+	gauges := c.Gauges()
 	pollCount := c.TakeAndResetPollCount()
-	m := models.Metrics{ID: "PollCount", MType: models.Counter, Delta: &pollCount}
-	return s.postJSON(m)
+
+	metrics := make([]models.Metrics, 0, len(gauges)+1)
+	for name, value := range gauges {
+		v := value
+		metrics = append(metrics, models.Metrics{ID: name, MType: models.Gauge, Value: &v})
+	}
+	metrics = append(metrics, models.Metrics{ID: "PollCount", MType: models.Counter, Delta: &pollCount})
+
+	if len(metrics) == 0 {
+		return nil
+	}
+	return s.postBatch(metrics)
 }
 
-func (s *Sender) postJSON(m models.Metrics) error {
-	raw, err := json.Marshal(m)
+func (s *Sender) postBatch(metrics []models.Metrics) error {
+	raw, err := json.Marshal(metrics)
 	if err != nil {
-		return fmt.Errorf("marshal metric: %w", err)
+		return fmt.Errorf("marshal metrics: %w", err)
 	}
 
 	var buf bytes.Buffer
@@ -60,7 +64,7 @@ func (s *Sender) postJSON(m models.Metrics) error {
 		return fmt.Errorf("gzip close: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, s.serverURL+"/update", &buf)
+	req, err := http.NewRequest(http.MethodPost, s.serverURL+"/updates/", &buf)
 	if err != nil {
 		return err
 	}

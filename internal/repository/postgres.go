@@ -5,10 +5,13 @@ import (
 	"database/sql"
 	"embed"
 	"errors"
+	"fmt"
 
 	"github.com/golang-migrate/migrate/v4"
 	pgxmigrate "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+
+	models "github.com/faust8888/go-musthave-metrics/internal/model"
 )
 
 //go:embed migrations/*.sql
@@ -111,4 +114,39 @@ func (s *PostgresStorage) GetAllCounters() map[string]int64 {
 		}
 	}
 	return out
+}
+
+func (s *PostgresStorage) UpdateBatch(metrics []models.Metrics) error {
+	tx, err := s.db.BeginTx(context.Background(), nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, m := range metrics {
+		switch m.MType {
+		case models.Gauge:
+			if m.Value == nil {
+				continue
+			}
+			_, err = tx.ExecContext(context.Background(),
+				`INSERT INTO gauges(name, value) VALUES($1, $2)
+				 ON CONFLICT(name) DO UPDATE SET value = EXCLUDED.value`,
+				m.ID, *m.Value)
+		case models.Counter:
+			if m.Delta == nil {
+				continue
+			}
+			_, err = tx.ExecContext(context.Background(),
+				`INSERT INTO counters(name, delta) VALUES($1, $2)
+				 ON CONFLICT(name) DO UPDATE SET delta = counters.delta + EXCLUDED.delta`,
+				m.ID, *m.Delta)
+		default:
+			return fmt.Errorf("unknown metric type %q", m.MType)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }

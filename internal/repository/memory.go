@@ -1,6 +1,10 @@
 package repository
 
-import "sync"
+import (
+	"sync"
+
+	models "github.com/faust8888/go-musthave-metrics/internal/model"
+)
 
 type Storage interface {
 	UpdateGauge(name string, value float64)
@@ -9,6 +13,8 @@ type Storage interface {
 	GetCounter(name string) (int64, bool)
 	GetAllGauges() map[string]float64
 	GetAllCounters() map[string]int64
+	// UpdateBatch applies all metrics atomically (or as close as possible).
+	UpdateBatch(metrics []models.Metrics) error
 }
 
 type MemStorage struct {
@@ -68,4 +74,22 @@ func (s *MemStorage) GetAllCounters() map[string]int64 {
 		out[k] = v
 	}
 	return out
+}
+
+func (s *MemStorage) UpdateBatch(metrics []models.Metrics) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, m := range metrics {
+		switch m.MType {
+		case models.Gauge:
+			if m.Value != nil {
+				s.gauges[m.ID] = *m.Value
+			}
+		case models.Counter:
+			if m.Delta != nil {
+				s.counters[m.ID] += *m.Delta
+			}
+		}
+	}
+	return nil
 }

@@ -40,6 +40,14 @@ func (fs *FileStorage) UpdateCounter(name string, value int64) {
 	}
 }
 
+func (fs *FileStorage) UpdateBatch(metrics []models.Metrics) error {
+	_ = fs.MemStorage.UpdateBatch(metrics)
+	if fs.syncWrite {
+		return fs.Save()
+	}
+	return nil
+}
+
 func (fs *FileStorage) Save() error {
 	gauges := fs.GetAllGauges()
 	counters := fs.GetAllCounters()

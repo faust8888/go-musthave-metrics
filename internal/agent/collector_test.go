@@ -60,9 +60,10 @@ func TestCollector_TakeAndResetPollCount(t *testing.T) {
 }
 
 func TestSender_Send(t *testing.T) {
+	var batchReceived bool
 	var counterSent bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/update" {
+		if r.Method != http.MethodPost || r.URL.Path != "/updates/" {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
@@ -76,11 +77,16 @@ func TestSender_Send(t *testing.T) {
 			defer gr.Close()
 			reader = io.NopCloser(gr)
 		}
-		var body struct {
+		var batch []struct {
 			MType string `json:"type"`
 		}
-		if err := json.NewDecoder(reader).Decode(&body); err == nil && body.MType == "counter" {
-			counterSent = true
+		if err := json.NewDecoder(reader).Decode(&batch); err == nil && len(batch) > 0 {
+			batchReceived = true
+			for _, m := range batch {
+				if m.MType == "counter" {
+					counterSent = true
+				}
+			}
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -97,8 +103,10 @@ func TestSender_Send(t *testing.T) {
 	if got := c.PollCount(); got != 0 {
 		t.Errorf("PollCount after Send: got %d, want 0", got)
 	}
-
+	if !batchReceived {
+		t.Error("no batch was received at /updates/")
+	}
 	if !counterSent {
-		t.Error("no counter metric was sent to server")
+		t.Error("no counter metric was included in the batch")
 	}
 }
