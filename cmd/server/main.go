@@ -17,6 +17,7 @@ import (
 	"github.com/faust8888/go-musthave-metrics/internal/envconfig"
 	"github.com/faust8888/go-musthave-metrics/internal/handler"
 	"github.com/faust8888/go-musthave-metrics/internal/middleware"
+	"github.com/faust8888/go-musthave-metrics/internal/repository"
 )
 
 func main() {
@@ -53,10 +54,14 @@ func main() {
 			log.Fatal(err)
 		}
 		defer db.Close()
-		logger.Info("database configured", zap.String("dsn", *dsn))
+
+		if err = repository.RunMigrations(db); err != nil {
+			log.Fatal("migrations failed: ", err)
+		}
+		logger.Info("database ready", zap.String("dsn", *dsn))
 	}
 
-	store, cleanup := newStorage(ctx, *filePath, *storeInterval, *restore, logger)
+	store, cleanup := newStorage(ctx, db, *filePath, *storeInterval, *restore, logger)
 	defer cleanup()
 
 	r := chi.NewRouter()
