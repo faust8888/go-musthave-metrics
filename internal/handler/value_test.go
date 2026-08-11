@@ -1,6 +1,7 @@
 package handler_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,8 +21,8 @@ func newValueRouter(store repository.Storage) http.Handler {
 
 func TestValueHandler(t *testing.T) {
 	store := repository.NewMemStorage()
-	store.UpdateGauge("temp", 36.6)
-	store.UpdateCounter("hits", 42)
+	store.UpdateGauge(context.Background(), "temp", 36.6)
+	store.UpdateCounter(context.Background(), "hits", 42)
 
 	router := newValueRouter(store)
 

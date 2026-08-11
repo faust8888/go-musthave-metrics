@@ -1,6 +1,7 @@
 package handler_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,8 +13,8 @@ import (
 
 func TestIndexHandler(t *testing.T) {
 	store := repository.NewMemStorage()
-	store.UpdateGauge("Alloc", 1024.5)
-	store.UpdateCounter("PollCount", 7)
+	store.UpdateGauge(context.Background(), "Alloc", 1024.5)
+	store.UpdateCounter(context.Background(), "PollCount", 7)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()

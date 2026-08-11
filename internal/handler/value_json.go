@@ -16,16 +16,17 @@ func ValueJSON(store repository.Storage) http.HandlerFunc {
 			return
 		}
 
+		ctx := r.Context()
 		switch m.MType {
 		case models.Gauge:
-			v, ok := store.GetGauge(m.ID)
+			v, ok := store.GetGauge(ctx, m.ID)
 			if !ok {
 				http.Error(w, "metric not found", http.StatusNotFound)
 				return
 			}
 			m.Value = &v
 		case models.Counter:
-			v, ok := store.GetCounter(m.ID)
+			v, ok := store.GetCounter(ctx, m.ID)
 			if !ok {
 				http.Error(w, "metric not found", http.StatusNotFound)
 				return

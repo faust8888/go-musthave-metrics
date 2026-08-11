@@ -75,7 +75,7 @@ func main() {
 	r.Get("/value/{type}/{name}", handler.Value(store))
 	r.Post("/update", handler.UpdateJSON(store))
 	r.Post("/update/", handler.UpdateJSON(store))
-	r.Post("/updates/", handler.UpdatesJSON(store))
+	r.Post("/updates/", handler.UpdatesBatch(store))
 	r.Post("/value", handler.ValueJSON(store))
 	r.Post("/value/", handler.ValueJSON(store))
 

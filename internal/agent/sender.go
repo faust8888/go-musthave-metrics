@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"time"
 
 	models "github.com/faust8888/go-musthave-metrics/internal/model"
 	"github.com/faust8888/go-musthave-metrics/internal/retry"
@@ -20,14 +21,24 @@ type MetricsProvider interface {
 }
 
 type Sender struct {
-	serverURL string
-	client    *http.Client
+	serverURL   string
+	client      *http.Client
+	retryDelays []time.Duration
 }
 
 func NewSender(serverURL string) *Sender {
 	return &Sender{
-		serverURL: serverURL,
-		client:    &http.Client{},
+		serverURL:   serverURL,
+		client:      &http.Client{},
+		retryDelays: retry.DefaultDelays,
+	}
+}
+
+func NewSenderWithDelays(serverURL string, delays []time.Duration) *Sender {
+	return &Sender{
+		serverURL:   serverURL,
+		client:      &http.Client{},
+		retryDelays: delays,
 	}
 }
 
@@ -58,7 +69,7 @@ func (s *Sender) postBatch(metrics []models.Metrics) error {
 	}
 	return retry.Do(func() error {
 		return s.doPost(payload)
-	}, isNetworkError)
+	}, isNetworkError, s.retryDelays)
 }
 
 func (s *Sender) doPost(payload []byte) error {

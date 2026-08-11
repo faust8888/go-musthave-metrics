@@ -10,8 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/faust8888/go-musthave-metrics/internal/retry"
-
 	"github.com/faust8888/go-musthave-metrics/internal/agent"
 )
 
@@ -116,11 +114,6 @@ func TestSender_Send(t *testing.T) {
 }
 
 func TestSender_Send_Retry(t *testing.T) {
-	// Use zero delays so the test finishes instantly.
-	orig := retry.Delays
-	retry.Delays = []time.Duration{0, 0, 0}
-	defer func() { retry.Delays = orig }()
-
 	var attempts atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := attempts.Add(1)
@@ -142,7 +135,8 @@ func TestSender_Send_Retry(t *testing.T) {
 	c := agent.NewCollector()
 	c.Collect()
 
-	s := agent.NewSender(srv.URL)
+	// Use zero delays so the test finishes instantly.
+	s := agent.NewSenderWithDelays(srv.URL, []time.Duration{0, 0, 0})
 	if err := s.Send(c); err != nil {
 		t.Fatalf("Send() failed after retries: %v", err)
 	}

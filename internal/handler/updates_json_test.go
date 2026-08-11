@@ -80,7 +80,7 @@ func TestUpdatesJSONHandler(t *testing.T) {
 			req.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()
 
-			handler.UpdatesJSON(store)(w, req)
+			handler.UpdatesBatch(store)(w, req)
 
 			if w.Code != tt.wantCode {
 				t.Errorf("got status %d, want %d", w.Code, tt.wantCode)
@@ -103,16 +103,16 @@ func TestUpdatesJSONHandler_StorageEffect(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	handler.UpdatesJSON(store)(w, req)
+	handler.UpdatesBatch(store)(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("got status %d, want 200", w.Code)
 	}
 
-	if v, ok := store.GetGauge("temp"); !ok || v != 36.6 {
+	if v, ok := store.GetGauge(req.Context(), "temp"); !ok || v != 36.6 {
 		t.Errorf("gauge temp: got %f %v, want 36.6 true", v, ok)
 	}
-	if d, ok := store.GetCounter("hits"); !ok || d != 30 {
+	if d, ok := store.GetCounter(req.Context(), "hits"); !ok || d != 30 {
 		t.Errorf("counter hits: got %d %v, want 30 true", d, ok)
 	}
 }

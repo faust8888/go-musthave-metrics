@@ -8,7 +8,7 @@ import (
 	"github.com/faust8888/go-musthave-metrics/internal/repository"
 )
 
-func UpdatesJSON(store repository.Storage) http.HandlerFunc {
+func UpdatesBatch(store repository.Storage) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var metrics []models.Metrics
 		if err := json.NewDecoder(r.Body).Decode(&metrics); err != nil {
@@ -36,7 +36,7 @@ func UpdatesJSON(store repository.Storage) http.HandlerFunc {
 				return
 			}
 		}
-		if err := store.UpdateBatch(metrics); err != nil {
+		if err := store.UpdateBatch(r.Context(), metrics); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

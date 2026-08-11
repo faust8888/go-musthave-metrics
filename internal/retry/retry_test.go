@@ -6,10 +6,7 @@ import (
 	"time"
 )
 
-func init() {
-	// Zero delays so the test suite runs instantly.
-	Delays = []time.Duration{0, 0, 0}
-}
+var zeroDelays = []time.Duration{0, 0, 0}
 
 var errRetriable = errors.New("retriable")
 var errFatal = errors.New("fatal")
@@ -18,7 +15,7 @@ func isRetriable(err error) bool { return errors.Is(err, errRetriable) }
 
 func TestDo_SuccessFirstAttempt(t *testing.T) {
 	calls := 0
-	err := Do(func() error { calls++; return nil }, isRetriable)
+	err := Do(func() error { calls++; return nil }, isRetriable, zeroDelays)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -35,7 +32,7 @@ func TestDo_SuccessAfterRetries(t *testing.T) {
 			return errRetriable
 		}
 		return nil
-	}, isRetriable)
+	}, isRetriable, zeroDelays)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -46,7 +43,7 @@ func TestDo_SuccessAfterRetries(t *testing.T) {
 
 func TestDo_ExhaustedReturnsLastError(t *testing.T) {
 	calls := 0
-	err := Do(func() error { calls++; return errRetriable }, isRetriable)
+	err := Do(func() error { calls++; return errRetriable }, isRetriable, zeroDelays)
 	if !errors.Is(err, errRetriable) {
 		t.Fatalf("want errRetriable, got %v", err)
 	}
@@ -58,7 +55,7 @@ func TestDo_ExhaustedReturnsLastError(t *testing.T) {
 
 func TestDo_NonRetriableStopsImmediately(t *testing.T) {
 	calls := 0
-	err := Do(func() error { calls++; return errFatal }, isRetriable)
+	err := Do(func() error { calls++; return errFatal }, isRetriable, zeroDelays)
 	if !errors.Is(err, errFatal) {
 		t.Fatalf("want errFatal, got %v", err)
 	}
@@ -68,14 +65,10 @@ func TestDo_NonRetriableStopsImmediately(t *testing.T) {
 }
 
 func TestDo_DelaysAreRespected(t *testing.T) {
-	// Restore real delays briefly and measure elapsed time.
-	orig := Delays
-	Delays = []time.Duration{10 * time.Millisecond, 10 * time.Millisecond, 10 * time.Millisecond}
-	defer func() { Delays = orig }()
-
+	delays := []time.Duration{10 * time.Millisecond, 10 * time.Millisecond, 10 * time.Millisecond}
 	calls := 0
 	start := time.Now()
-	Do(func() error { calls++; return errRetriable }, isRetriable) //nolint:errcheck
+	Do(func() error { calls++; return errRetriable }, isRetriable, delays) //nolint:errcheck
 	elapsed := time.Since(start)
 
 	// 3 retries × 10 ms = at least 30 ms
