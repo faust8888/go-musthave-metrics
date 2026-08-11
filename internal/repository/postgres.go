@@ -157,22 +157,14 @@ func (s *PostgresStorage) UpdateBatch(ctx context.Context, metrics []models.Metr
 }
 
 func (s *PostgresStorage) execBatch(ctx context.Context, metrics []models.Metrics) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	type gaugeRow struct {
-		name  string
-		value float64
-	}
-	type counterRow struct {
-		name  string
-		delta int64
-	}
-	var gauges []gaugeRow
-	var counters []counterRow
+	// Deduplicate within the batch: PostgreSQL's ON CONFLICT DO UPDATE cannot
+	// handle the same key appearing twice in a single VALUES list.
+	// For gauges: last value wins. For counters: accumulate deltas.
+	gaugeMap := make(map[string]float64)
+	counterMap := make(map[string]int64)
+	// Preserve insertion order for deterministic queries.
+	var gaugeOrder []string
+	var counterOrder []string
 
 	for _, m := range metrics {
 		switch m.MType {
@@ -180,23 +172,35 @@ func (s *PostgresStorage) execBatch(ctx context.Context, metrics []models.Metric
 			if m.Value == nil {
 				continue
 			}
-			gauges = append(gauges, gaugeRow{m.ID, *m.Value})
+			if _, seen := gaugeMap[m.ID]; !seen {
+				gaugeOrder = append(gaugeOrder, m.ID)
+			}
+			gaugeMap[m.ID] = *m.Value
 		case models.Counter:
 			if m.Delta == nil {
 				continue
 			}
-			counters = append(counters, counterRow{m.ID, *m.Delta})
+			if _, seen := counterMap[m.ID]; !seen {
+				counterOrder = append(counterOrder, m.ID)
+			}
+			counterMap[m.ID] += *m.Delta
 		default:
 			return fmt.Errorf("unknown metric type %q", m.MType)
 		}
 	}
 
-	if len(gauges) > 0 {
-		placeholders := make([]string, len(gauges))
-		args := make([]any, 0, len(gauges)*2)
-		for i, g := range gauges {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if len(gaugeOrder) > 0 {
+		placeholders := make([]string, len(gaugeOrder))
+		args := make([]any, 0, len(gaugeOrder)*2)
+		for i, name := range gaugeOrder {
 			placeholders[i] = fmt.Sprintf("($%d,$%d)", i*2+1, i*2+2)
-			args = append(args, g.name, g.value)
+			args = append(args, name, gaugeMap[name])
 		}
 		q := "INSERT INTO gauges(name,value) VALUES " + strings.Join(placeholders, ",") +
 			" ON CONFLICT(name) DO UPDATE SET value = EXCLUDED.value"
@@ -205,12 +209,12 @@ func (s *PostgresStorage) execBatch(ctx context.Context, metrics []models.Metric
 		}
 	}
 
-	if len(counters) > 0 {
-		placeholders := make([]string, len(counters))
-		args := make([]any, 0, len(counters)*2)
-		for i, c := range counters {
+	if len(counterOrder) > 0 {
+		placeholders := make([]string, len(counterOrder))
+		args := make([]any, 0, len(counterOrder)*2)
+		for i, name := range counterOrder {
 			placeholders[i] = fmt.Sprintf("($%d,$%d)", i*2+1, i*2+2)
-			args = append(args, c.name, c.delta)
+			args = append(args, name, counterMap[name])
 		}
 		q := "INSERT INTO counters(name,delta) VALUES " + strings.Join(placeholders, ",") +
 			" ON CONFLICT(name) DO UPDATE SET delta = counters.delta + EXCLUDED.delta"
