@@ -16,16 +16,17 @@ func Value(store repository.Storage) http.HandlerFunc {
 		metricType := chi.URLParam(r, "type")
 		metricName := chi.URLParam(r, "name")
 
+		ctx := r.Context()
 		switch metricType {
 		case models.Gauge:
-			v, ok := store.GetGauge(metricName)
+			v, ok := store.GetGauge(ctx, metricName)
 			if !ok {
 				http.Error(w, "metric not found", http.StatusNotFound)
 				return
 			}
 			fmt.Fprint(w, strconv.FormatFloat(v, 'f', -1, 64))
 		case models.Counter:
-			v, ok := store.GetCounter(metricName)
+			v, ok := store.GetCounter(ctx, metricName)
 			if !ok {
 				http.Error(w, "metric not found", http.StatusNotFound)
 				return

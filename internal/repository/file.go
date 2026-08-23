@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	iofs "io/fs"
@@ -26,23 +27,31 @@ func NewFileStorage(path string, syncWrite bool) *FileStorage {
 	}
 }
 
-func (fs *FileStorage) UpdateGauge(name string, value float64) {
-	fs.MemStorage.UpdateGauge(name, value)
+func (fs *FileStorage) UpdateGauge(ctx context.Context, name string, value float64) {
+	fs.MemStorage.UpdateGauge(ctx, name, value)
 	if fs.syncWrite {
 		_ = fs.Save()
 	}
 }
 
-func (fs *FileStorage) UpdateCounter(name string, value int64) {
-	fs.MemStorage.UpdateCounter(name, value)
+func (fs *FileStorage) UpdateCounter(ctx context.Context, name string, value int64) {
+	fs.MemStorage.UpdateCounter(ctx, name, value)
 	if fs.syncWrite {
 		_ = fs.Save()
 	}
+}
+
+func (fs *FileStorage) UpdateBatch(ctx context.Context, metrics []models.Metrics) error {
+	_ = fs.MemStorage.UpdateBatch(ctx, metrics)
+	if fs.syncWrite {
+		return fs.Save()
+	}
+	return nil
 }
 
 func (fs *FileStorage) Save() error {
-	gauges := fs.GetAllGauges()
-	counters := fs.GetAllCounters()
+	gauges := fs.GetAllGauges(context.Background())
+	counters := fs.GetAllCounters(context.Background())
 
 	metrics := make([]models.Metrics, 0, len(gauges)+len(counters))
 	for name, value := range gauges {
@@ -91,15 +100,16 @@ func (fs *FileStorage) Load() error {
 		return err
 	}
 
+	ctx := context.Background()
 	for _, m := range metrics {
 		switch m.MType {
 		case models.Gauge:
 			if m.Value != nil {
-				fs.MemStorage.UpdateGauge(m.ID, *m.Value)
+				fs.MemStorage.UpdateGauge(ctx, m.ID, *m.Value)
 			}
 		case models.Counter:
 			if m.Delta != nil {
-				fs.MemStorage.UpdateCounter(m.ID, *m.Delta)
+				fs.MemStorage.UpdateCounter(ctx, m.ID, *m.Delta)
 			}
 		}
 	}

@@ -12,8 +12,9 @@ import (
 
 func Index(store repository.Storage) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gauges := store.GetAllGauges()
-		counters := store.GetAllCounters()
+		ctx := r.Context()
+		gauges := store.GetAllGauges(ctx)
+		counters := store.GetAllCounters(ctx)
 
 		var sb strings.Builder
 		sb.WriteString("<html><head><title>Metrics</title></head><body><h1>Metrics</h1><ul>")

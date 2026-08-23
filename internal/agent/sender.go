@@ -4,11 +4,15 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"time"
 
 	models "github.com/faust8888/go-musthave-metrics/internal/model"
+	"github.com/faust8888/go-musthave-metrics/internal/retry"
 )
 
 type MetricsProvider interface {
@@ -17,50 +21,59 @@ type MetricsProvider interface {
 }
 
 type Sender struct {
-	serverURL string
-	client    *http.Client
+	serverURL   string
+	client      *http.Client
+	retryDelays []time.Duration
 }
 
 func NewSender(serverURL string) *Sender {
 	return &Sender{
-		serverURL: serverURL,
-		client:    &http.Client{},
+		serverURL:   serverURL,
+		client:      &http.Client{},
+		retryDelays: retry.DefaultDelays,
 	}
 }
 
+func NewSenderWithDelays(serverURL string, delays []time.Duration) *Sender {
+	return &Sender{
+		serverURL:   serverURL,
+		client:      &http.Client{},
+		retryDelays: delays,
+	}
+}
+
+// Send collects all current metrics and posts them in a single batch request,
+// retrying on transient network errors.
 func (s *Sender) Send(c MetricsProvider) error {
-	for name, value := range c.Gauges() {
-		v := value
-		m := models.Metrics{ID: name, MType: models.Gauge, Value: &v}
-		if err := s.postJSON(m); err != nil {
-			return err
-		}
-	}
-
+	gauges := c.Gauges()
 	pollCount := c.TakeAndResetPollCount()
-	m := models.Metrics{ID: "PollCount", MType: models.Counter, Delta: &pollCount}
-	return s.postJSON(m)
+
+	metrics := make([]models.Metrics, 0, len(gauges)+1)
+	for name, value := range gauges {
+		v := value
+		metrics = append(metrics, models.Metrics{ID: name, MType: models.Gauge, Value: &v})
+	}
+	metrics = append(metrics, models.Metrics{ID: "PollCount", MType: models.Counter, Delta: &pollCount})
+
+	if len(metrics) == 0 {
+		return nil
+	}
+	return s.postBatch(metrics)
 }
 
-func (s *Sender) postJSON(m models.Metrics) error {
-	raw, err := json.Marshal(m)
+func (s *Sender) postBatch(metrics []models.Metrics) error {
+	// Build the compressed payload once; reuse across retries.
+	payload, err := buildPayload(metrics)
 	if err != nil {
-		return fmt.Errorf("marshal metric: %w", err)
+		return err
 	}
+	return retry.Do(func() error {
+		return s.doPost(payload)
+	}, isNetworkError, s.retryDelays)
+}
 
-	var buf bytes.Buffer
-	gz, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
-	if err != nil {
-		return fmt.Errorf("gzip new writer: %w", err)
-	}
-	if _, err = gz.Write(raw); err != nil {
-		return fmt.Errorf("gzip write: %w", err)
-	}
-	if err = gz.Close(); err != nil {
-		return fmt.Errorf("gzip close: %w", err)
-	}
-
-	req, err := http.NewRequest(http.MethodPost, s.serverURL+"/update", &buf)
+func (s *Sender) doPost(payload []byte) error {
+	req, err := http.NewRequest(http.MethodPost, s.serverURL+"/updates/", bytes.NewReader(payload))
 	if err != nil {
 		return err
 	}
@@ -75,4 +88,28 @@ func (s *Sender) postJSON(m models.Metrics) error {
 	defer resp.Body.Close()
 	_, err = io.Copy(io.Discard, resp.Body)
 	return err
+}
+
+func buildPayload(metrics []models.Metrics) ([]byte, error) {
+	raw, err := json.Marshal(metrics)
+	if err != nil {
+		return nil, fmt.Errorf("marshal metrics: %w", err)
+	}
+	var buf bytes.Buffer
+	gz, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
+	if err != nil {
+		return nil, fmt.Errorf("gzip new writer: %w", err)
+	}
+	if _, err = gz.Write(raw); err != nil {
+		return nil, fmt.Errorf("gzip write: %w", err)
+	}
+	if err = gz.Close(); err != nil {
+		return nil, fmt.Errorf("gzip close: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
+func isNetworkError(err error) bool {
+	var urlErr *url.Error
+	return errors.As(err, &urlErr)
 }

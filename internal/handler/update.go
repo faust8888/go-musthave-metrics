@@ -23,14 +23,14 @@ func Update(store repository.Storage) http.HandlerFunc {
 				http.Error(w, "invalid gauge value", http.StatusBadRequest)
 				return
 			}
-			store.UpdateGauge(metricName, v)
+			store.UpdateGauge(r.Context(), metricName, v)
 		case models.Counter:
 			v, err := strconv.ParseInt(metricValue, 10, 64)
 			if err != nil {
 				http.Error(w, "invalid counter value", http.StatusBadRequest)
 				return
 			}
-			store.UpdateCounter(metricName, v)
+			store.UpdateCounter(r.Context(), metricName, v)
 		default:
 			http.Error(w, "invalid metric type", http.StatusBadRequest)
 			return

@@ -6,7 +6,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/faust8888/go-musthave-metrics/internal/agent"
 )
@@ -60,9 +62,10 @@ func TestCollector_TakeAndResetPollCount(t *testing.T) {
 }
 
 func TestSender_Send(t *testing.T) {
+	var batchReceived bool
 	var counterSent bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/update" {
+		if r.Method != http.MethodPost || r.URL.Path != "/updates/" {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
@@ -76,11 +79,16 @@ func TestSender_Send(t *testing.T) {
 			defer gr.Close()
 			reader = io.NopCloser(gr)
 		}
-		var body struct {
+		var batch []struct {
 			MType string `json:"type"`
 		}
-		if err := json.NewDecoder(reader).Decode(&body); err == nil && body.MType == "counter" {
-			counterSent = true
+		if err := json.NewDecoder(reader).Decode(&batch); err == nil && len(batch) > 0 {
+			batchReceived = true
+			for _, m := range batch {
+				if m.MType == "counter" {
+					counterSent = true
+				}
+			}
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -97,8 +105,42 @@ func TestSender_Send(t *testing.T) {
 	if got := c.PollCount(); got != 0 {
 		t.Errorf("PollCount after Send: got %d, want 0", got)
 	}
-
+	if !batchReceived {
+		t.Error("no batch was received at /updates/")
+	}
 	if !counterSent {
-		t.Error("no counter metric was sent to server")
+		t.Error("no counter metric was included in the batch")
+	}
+}
+
+func TestSender_Send_Retry(t *testing.T) {
+	var attempts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := attempts.Add(1)
+		if n < 3 {
+			// Force a connection-level error by hijacking and closing the socket.
+			hj, ok := w.(http.Hijacker)
+			if !ok {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			conn, _, _ := hj.Hijack()
+			conn.Close()
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := agent.NewCollector()
+	c.Collect()
+
+	// Use zero delays so the test finishes instantly.
+	s := agent.NewSenderWithDelays(srv.URL, []time.Duration{0, 0, 0})
+	if err := s.Send(c); err != nil {
+		t.Fatalf("Send() failed after retries: %v", err)
+	}
+	if n := attempts.Load(); n != 3 {
+		t.Errorf("expected 3 attempts (1 fail + 1 fail + 1 ok), got %d", n)
 	}
 }

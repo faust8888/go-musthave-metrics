@@ -16,20 +16,21 @@ func UpdateJSON(store repository.Storage) http.HandlerFunc {
 			return
 		}
 
+		ctx := r.Context()
 		switch m.MType {
 		case models.Gauge:
 			if m.Value == nil {
 				http.Error(w, "value is required for gauge", http.StatusBadRequest)
 				return
 			}
-			store.UpdateGauge(m.ID, *m.Value)
+			store.UpdateGauge(ctx, m.ID, *m.Value)
 		case models.Counter:
 			if m.Delta == nil {
 				http.Error(w, "delta is required for counter", http.StatusBadRequest)
 				return
 			}
-			store.UpdateCounter(m.ID, *m.Delta)
-			v, _ := store.GetCounter(m.ID)
+			store.UpdateCounter(ctx, m.ID, *m.Delta)
+			v, _ := store.GetCounter(ctx, m.ID)
 			m.Delta = &v
 		default:
 			http.Error(w, "invalid metric type", http.StatusBadRequest)

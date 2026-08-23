@@ -1,6 +1,7 @@
 package handler_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -62,7 +63,7 @@ func TestUpdateHandlerStorage(t *testing.T) {
 			t.Fatalf("expected 200, got %d", w.Code)
 		}
 	}
-	if v, ok := store.GetCounter("hits"); !ok || v != 30 {
+	if v, ok := store.GetCounter(context.Background(), "hits"); !ok || v != 30 {
 		t.Errorf("counter hits: got %d, want 30", v)
 	}
 
@@ -72,7 +73,7 @@ func TestUpdateHandlerStorage(t *testing.T) {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 	}
-	if v, ok := store.GetGauge("temp"); !ok || v != 2.2 {
+	if v, ok := store.GetGauge(context.Background(), "temp"); !ok || v != 2.2 {
 		t.Errorf("gauge temp: got %f, want 2.2", v)
 	}
 }
