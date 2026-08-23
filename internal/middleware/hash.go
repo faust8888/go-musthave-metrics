@@ -8,8 +8,9 @@ import (
 	"github.com/faust8888/go-musthave-metrics/internal/hash"
 )
 
-// HashSHA256 verifies the request HashSHA256 header and signs the response
-// when key is non-empty. Requests without a key are passed through unchanged.
+// HashSHA256 verifies HashSHA256 when that request header is present and
+// signs the response when key is non-empty. Requests without a key or
+// without the header are passed through; a mismatch returns 400.
 func HashSHA256(key string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -30,11 +31,9 @@ func HashSHA256(key string) func(http.Handler) http.Handler {
 			defer hw.flush()
 
 			got := r.Header.Get(hash.Header)
-			if len(body) > 0 || got != "" {
-				if !hash.Equal(got, body, key) {
-					http.Error(hw, "invalid hash", http.StatusBadRequest)
-					return
-				}
+			if got != "" && !hash.Equal(got, body, key) {
+				http.Error(hw, "invalid hash", http.StatusBadRequest)
+				return
 			}
 
 			next.ServeHTTP(hw, r)

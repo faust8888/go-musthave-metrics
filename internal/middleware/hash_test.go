@@ -76,16 +76,28 @@ func TestHashSHA256_InvalidHash(t *testing.T) {
 }
 
 func TestHashSHA256_MissingHashWithBody(t *testing.T) {
-	h := HashSHA256("secret")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Error("handler must not be called when hash is missing")
+	const key = "secret"
+	body := `{"id":"x"}`
+
+	h := HashSHA256(key)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got, _ := io.ReadAll(r.Body)
+		if string(got) != body {
+			t.Errorf("handler body: got %q, want %q", got, body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	}))
 
-	req := httptest.NewRequest(http.MethodPost, "/update", strings.NewReader(`{"id":"x"}`))
+	req := httptest.NewRequest(http.MethodPost, "/update", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("status: got %d, want 400", w.Code)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want 200", w.Code)
+	}
+	want := hash.Sign(w.Body.Bytes(), key)
+	if got := w.Header().Get(hash.Header); got != want {
+		t.Errorf("response HashSHA256: got %q, want %q", got, want)
 	}
 }
 
