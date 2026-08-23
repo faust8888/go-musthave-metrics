@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/faust8888/go-musthave-metrics/internal/hash"
 	models "github.com/faust8888/go-musthave-metrics/internal/model"
 	"github.com/faust8888/go-musthave-metrics/internal/retry"
 )
@@ -22,21 +23,24 @@ type MetricsProvider interface {
 
 type Sender struct {
 	serverURL   string
+	key         string
 	client      *http.Client
 	retryDelays []time.Duration
 }
 
-func NewSender(serverURL string) *Sender {
+func NewSender(serverURL, key string) *Sender {
 	return &Sender{
 		serverURL:   serverURL,
+		key:         key,
 		client:      &http.Client{},
 		retryDelays: retry.DefaultDelays,
 	}
 }
 
-func NewSenderWithDelays(serverURL string, delays []time.Duration) *Sender {
+func NewSenderWithDelays(serverURL, key string, delays []time.Duration) *Sender {
 	return &Sender{
 		serverURL:   serverURL,
+		key:         key,
 		client:      &http.Client{},
 		retryDelays: delays,
 	}
@@ -63,16 +67,22 @@ func (s *Sender) Send(c MetricsProvider) error {
 
 func (s *Sender) postBatch(metrics []models.Metrics) error {
 	// Build the compressed payload once; reuse across retries.
-	payload, err := buildPayload(metrics)
+	// Hash is computed over the uncompressed JSON so it matches the server,
+	// which verifies the body after gzip decompression.
+	raw, err := json.Marshal(metrics)
+	if err != nil {
+		return fmt.Errorf("marshal metrics: %w", err)
+	}
+	payload, err := gzipBytes(raw)
 	if err != nil {
 		return err
 	}
 	return retry.Do(func() error {
-		return s.doPost(payload)
+		return s.doPost(payload, raw)
 	}, isNetworkError, s.retryDelays)
 }
 
-func (s *Sender) doPost(payload []byte) error {
+func (s *Sender) doPost(payload, raw []byte) error {
 	req, err := http.NewRequest(http.MethodPost, s.serverURL+"/updates/", bytes.NewReader(payload))
 	if err != nil {
 		return err
@@ -80,6 +90,9 @@ func (s *Sender) doPost(payload []byte) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Content-Encoding", "gzip")
 	req.Header.Set("Accept-Encoding", "gzip")
+	if s.key != "" {
+		req.Header.Set(hash.Header, hash.Sign(raw, s.key))
+	}
 
 	resp, err := s.client.Do(req)
 	if err != nil {
@@ -90,11 +103,7 @@ func (s *Sender) doPost(payload []byte) error {
 	return err
 }
 
-func buildPayload(metrics []models.Metrics) ([]byte, error) {
-	raw, err := json.Marshal(metrics)
-	if err != nil {
-		return nil, fmt.Errorf("marshal metrics: %w", err)
-	}
+func gzipBytes(raw []byte) ([]byte, error) {
 	var buf bytes.Buffer
 	gz, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
 	if err != nil {
