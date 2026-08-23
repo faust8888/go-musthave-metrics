@@ -18,9 +18,11 @@ func main() {
 	addr := flag.String("a", "localhost:8080", "HTTP server address")
 	reportSec := flag.Int("r", 10, "report interval in seconds")
 	pollSec := flag.Int("p", 2, "poll interval in seconds")
+	key := flag.String("k", "", "hash key")
 	flag.Parse()
 
 	envconfig.String("ADDRESS", addr)
+	envconfig.String("KEY", key)
 	if err := envconfig.Int("REPORT_INTERVAL", reportSec); err != nil {
 		log.Fatal(err)
 	}
@@ -33,7 +35,7 @@ func main() {
 	reportInterval := time.Duration(*reportSec) * time.Second
 
 	collector := agent.NewCollector()
-	sender := agent.NewSender(serverURL)
+	sender := agent.NewSender(serverURL, *key)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()

@@ -26,11 +26,13 @@ func main() {
 	filePath := flag.String("f", "/tmp/metrics-db.json", "file storage path")
 	restore := flag.Bool("r", true, "restore metrics from file on start")
 	dsn := flag.String("d", "", "PostgreSQL DSN (DATABASE_DSN)")
+	key := flag.String("k", "", "hash key")
 	flag.Parse()
 
 	envconfig.String("ADDRESS", addr)
 	envconfig.String("FILE_STORAGE_PATH", filePath)
 	envconfig.String("DATABASE_DSN", dsn)
+	envconfig.String("KEY", key)
 	if err := envconfig.Int("STORE_INTERVAL", storeInterval); err != nil {
 		log.Fatal(err)
 	}
@@ -68,6 +70,7 @@ func main() {
 	r.Use(middleware.GzipDecompress)
 	r.Use(middleware.GzipCompress)
 	r.Use(middleware.Logger(logger))
+	r.Use(middleware.HashSHA256(*key))
 
 	r.Get("/ping", handler.Ping(db))
 	r.Get("/", handler.Index(store))
