@@ -49,16 +49,11 @@ func NewSenderWithDelays(serverURL, key string, delays []time.Duration) *Sender 
 // Send collects all current metrics and posts them in a single batch request,
 // retrying on transient network errors.
 func (s *Sender) Send(c MetricsProvider) error {
-	gauges := c.Gauges()
-	pollCount := c.TakeAndResetPollCount()
+	return s.SendBatch(metricsFrom(c))
+}
 
-	metrics := make([]models.Metrics, 0, len(gauges)+1)
-	for name, value := range gauges {
-		v := value
-		metrics = append(metrics, models.Metrics{ID: name, MType: models.Gauge, Value: &v})
-	}
-	metrics = append(metrics, models.Metrics{ID: "PollCount", MType: models.Counter, Delta: &pollCount})
-
+// SendBatch posts the given metrics in one gzip-compressed request.
+func (s *Sender) SendBatch(metrics []models.Metrics) error {
 	if len(metrics) == 0 {
 		return nil
 	}

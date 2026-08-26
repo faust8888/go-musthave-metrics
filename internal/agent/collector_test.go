@@ -62,6 +62,45 @@ func TestCollector_TakeAndResetPollCount(t *testing.T) {
 	}
 }
 
+func TestCollector_CollectGopsutil(t *testing.T) {
+	c := agent.NewCollector()
+	c.CollectGopsutil()
+
+	gauges := c.Gauges()
+	for _, name := range []string{"TotalMemory", "FreeMemory", "CPUutilization1"} {
+		if _, ok := gauges[name]; !ok {
+			t.Errorf("gauge %q not found after CollectGopsutil()", name)
+		}
+	}
+	if gauges["TotalMemory"] <= 0 {
+		t.Errorf("TotalMemory should be positive, got %f", gauges["TotalMemory"])
+	}
+}
+
+func TestCollector_Snapshot(t *testing.T) {
+	c := agent.NewCollector()
+	c.Collect()
+	c.Collect()
+
+	metrics := c.Snapshot()
+	if len(metrics) == 0 {
+		t.Fatal("Snapshot returned no metrics")
+	}
+	if c.PollCount() != 0 {
+		t.Errorf("PollCount after Snapshot: got %d, want 0", c.PollCount())
+	}
+
+	var foundCounter bool
+	for _, m := range metrics {
+		if m.ID == "PollCount" && m.MType == "counter" && m.Delta != nil && *m.Delta == 2 {
+			foundCounter = true
+		}
+	}
+	if !foundCounter {
+		t.Error("Snapshot missing PollCount counter with delta 2")
+	}
+}
+
 func TestSender_Send(t *testing.T) {
 	var batchReceived bool
 	var counterSent bool

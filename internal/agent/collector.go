@@ -1,9 +1,15 @@
 package agent
 
 import (
+	"fmt"
 	"math/rand"
 	"runtime"
 	"sync"
+
+	"github.com/shirou/gopsutil/v4/cpu"
+	"github.com/shirou/gopsutil/v4/mem"
+
+	models "github.com/faust8888/go-musthave-metrics/internal/model"
 )
 
 type Collector struct {
@@ -57,6 +63,32 @@ func (c *Collector) Collect() {
 	c.pollCount++
 }
 
+// CollectGopsutil reads extra system gauges via gopsutil.
+// CPUutilizationN is emitted once per logical CPU (1-based).
+func (c *Collector) CollectGopsutil() {
+	vm, vmErr := mem.VirtualMemory()
+	percents, cpuErr := cpu.Percent(0, true)
+	if cpuErr != nil || len(percents) == 0 {
+		percents = make([]float64, runtime.NumCPU())
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if vmErr == nil {
+		c.gauges["TotalMemory"] = float64(vm.Total)
+		c.gauges["FreeMemory"] = float64(vm.Free)
+	}
+	for i, p := range percents {
+		c.gauges[fmt.Sprintf("CPUutilization%d", i+1)] = p
+	}
+}
+
+// Snapshot copies current gauges and the accumulated PollCount, then resets the counter.
+func (c *Collector) Snapshot() []models.Metrics {
+	return metricsFrom(c)
+}
+
 func (c *Collector) Gauges() map[string]float64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -80,4 +112,17 @@ func (c *Collector) TakeAndResetPollCount() int64 {
 	v := c.pollCount
 	c.pollCount = 0
 	return v
+}
+
+func metricsFrom(c MetricsProvider) []models.Metrics {
+	gauges := c.Gauges()
+	pollCount := c.TakeAndResetPollCount()
+
+	metrics := make([]models.Metrics, 0, len(gauges)+1)
+	for name, value := range gauges {
+		v := value
+		metrics = append(metrics, models.Metrics{ID: name, MType: models.Gauge, Value: &v})
+	}
+	metrics = append(metrics, models.Metrics{ID: "PollCount", MType: models.Counter, Delta: &pollCount})
+	return metrics
 }
