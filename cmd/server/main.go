@@ -14,6 +14,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"go.uber.org/zap"
 
+	"github.com/faust8888/go-musthave-metrics/internal/audit"
 	"github.com/faust8888/go-musthave-metrics/internal/envconfig"
 	"github.com/faust8888/go-musthave-metrics/internal/handler"
 	"github.com/faust8888/go-musthave-metrics/internal/middleware"
@@ -27,12 +28,16 @@ func main() {
 	restore := flag.Bool("r", true, "restore metrics from file on start")
 	dsn := flag.String("d", "", "PostgreSQL DSN (DATABASE_DSN)")
 	key := flag.String("k", "", "hash key")
+	auditFile := flag.String("audit-file", "", "audit log file path")
+	auditURL := flag.String("audit-url", "", "audit HTTP endpoint")
 	flag.Parse()
 
 	envconfig.String("ADDRESS", addr)
 	envconfig.String("FILE_STORAGE_PATH", filePath)
 	envconfig.String("DATABASE_DSN", dsn)
 	envconfig.String("KEY", key)
+	envconfig.String("AUDIT_FILE", auditFile)
+	envconfig.String("AUDIT_URL", auditURL)
 	if err := envconfig.Int("STORE_INTERVAL", storeInterval); err != nil {
 		log.Fatal(err)
 	}
@@ -66,6 +71,8 @@ func main() {
 	store, cleanup := newStorage(ctx, db, *filePath, *storeInterval, *restore, logger)
 	defer cleanup()
 
+	auditor := audit.New(*auditFile, *auditURL)
+
 	r := chi.NewRouter()
 	r.Use(middleware.GzipDecompress)
 	r.Use(middleware.GzipCompress)
@@ -74,11 +81,11 @@ func main() {
 
 	r.Get("/ping", handler.Ping(db))
 	r.Get("/", handler.Index(store))
-	r.Post("/update/{type}/{name}/{value}", handler.Update(store))
+	r.Post("/update/{type}/{name}/{value}", handler.Update(store, auditor))
 	r.Get("/value/{type}/{name}", handler.Value(store))
-	r.Post("/update", handler.UpdateJSON(store))
-	r.Post("/update/", handler.UpdateJSON(store))
-	r.Post("/updates/", handler.UpdatesBatch(store))
+	r.Post("/update", handler.UpdateJSON(store, auditor))
+	r.Post("/update/", handler.UpdateJSON(store, auditor))
+	r.Post("/updates/", handler.UpdatesBatch(store, auditor))
 	r.Post("/value", handler.ValueJSON(store))
 	r.Post("/value/", handler.ValueJSON(store))
 
