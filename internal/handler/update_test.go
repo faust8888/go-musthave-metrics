@@ -14,7 +14,7 @@ import (
 
 func newUpdateRouter(store repository.Storage) http.Handler {
 	r := chi.NewRouter()
-	r.Post("/update/{type}/{name}/{value}", handler.Update(store))
+	r.Post("/update/{type}/{name}/{value}", handler.Update(store, nil))
 	return r
 }
 

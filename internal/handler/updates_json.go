@@ -4,11 +4,12 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/faust8888/go-musthave-metrics/internal/audit"
 	models "github.com/faust8888/go-musthave-metrics/internal/model"
 	"github.com/faust8888/go-musthave-metrics/internal/repository"
 )
 
-func UpdatesBatch(store repository.Storage) http.HandlerFunc {
+func UpdatesBatch(store repository.Storage, auditor *audit.Subject) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var metrics []models.Metrics
 		if err := json.NewDecoder(r.Body).Decode(&metrics); err != nil {
@@ -40,6 +41,11 @@ func UpdatesBatch(store repository.Storage) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		names := make([]string, 0, len(metrics))
+		for _, m := range metrics {
+			names = append(names, m.ID)
+		}
+		auditor.Record(r, names)
 		w.WriteHeader(http.StatusOK)
 	}
 }
