@@ -5,11 +5,25 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 )
 
 var compressibleTypes = map[string]bool{
 	"application/json": true,
 	"text/html":        true,
+}
+
+var gzipWriterPool = sync.Pool{
+	New: func() any {
+		w, _ := gzip.NewWriterLevel(io.Discard, gzip.BestSpeed)
+		return w
+	},
+}
+
+var gzipReaderPool = sync.Pool{
+	New: func() any {
+		return new(gzip.Reader)
+	},
 }
 
 type gzipResponseWriter struct {
@@ -38,6 +52,15 @@ func (grw *gzipResponseWriter) decide(b []byte) {
 	}
 }
 
+func (grw *gzipResponseWriter) ensureWriter() {
+	if grw.gz != nil {
+		return
+	}
+	gz := gzipWriterPool.Get().(*gzip.Writer)
+	gz.Reset(grw.ResponseWriter)
+	grw.gz = gz
+}
+
 func (grw *gzipResponseWriter) WriteHeader(statusCode int) {
 	grw.decide(nil)
 	grw.ResponseWriter.WriteHeader(statusCode)
@@ -46,9 +69,23 @@ func (grw *gzipResponseWriter) WriteHeader(statusCode int) {
 func (grw *gzipResponseWriter) Write(b []byte) (int, error) {
 	grw.decide(b)
 	if grw.useGzip {
+		grw.ensureWriter()
 		return grw.gz.Write(b)
 	}
 	return grw.ResponseWriter.Write(b)
+}
+
+func (grw *gzipResponseWriter) close() {
+	if grw.gz == nil {
+		if grw.useGzip {
+			grw.ensureWriter()
+		} else {
+			return
+		}
+	}
+	_ = grw.gz.Close()
+	gzipWriterPool.Put(grw.gz)
+	grw.gz = nil
 }
 
 // GzipCompress compresses responses for clients that send Accept-Encoding: gzip.
@@ -59,16 +96,9 @@ func GzipCompress(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		gz, err := gzip.NewWriterLevel(w, gzip.BestSpeed)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		grw := &gzipResponseWriter{ResponseWriter: w, gz: gz}
+		grw := &gzipResponseWriter{ResponseWriter: w}
 		next.ServeHTTP(grw, r)
-		if grw.useGzip {
-			gz.Close()
-		}
+		grw.close()
 	})
 }
 
@@ -79,12 +109,16 @@ func GzipDecompress(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		gr, err := gzip.NewReader(r.Body)
-		if err != nil {
+		gr := gzipReaderPool.Get().(*gzip.Reader)
+		if err := gr.Reset(r.Body); err != nil {
+			gzipReaderPool.Put(gr)
 			http.Error(w, "invalid gzip body", http.StatusBadRequest)
 			return
 		}
-		defer gr.Close()
+		defer func() {
+			_ = gr.Close()
+			gzipReaderPool.Put(gr)
+		}()
 		r.Body = io.NopCloser(gr)
 		next.ServeHTTP(w, r)
 	})

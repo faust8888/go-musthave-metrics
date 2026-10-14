@@ -1,11 +1,10 @@
 package handler
 
 import (
-	"fmt"
+	"bytes"
 	"net/http"
 	"sort"
 	"strconv"
-	"strings"
 
 	"github.com/faust8888/go-musthave-metrics/internal/repository"
 )
@@ -16,8 +15,9 @@ func Index(store repository.Storage) http.HandlerFunc {
 		gauges := store.GetAllGauges(ctx)
 		counters := store.GetAllCounters(ctx)
 
-		var sb strings.Builder
-		sb.WriteString("<html><head><title>Metrics</title></head><body><h1>Metrics</h1><ul>")
+		var buf bytes.Buffer
+		buf.Grow(256 + 48*(len(gauges)+len(counters)))
+		buf.WriteString("<html><head><title>Metrics</title></head><body><h1>Metrics</h1><ul>")
 
 		gaugeNames := make([]string, 0, len(gauges))
 		for name := range gauges {
@@ -25,7 +25,11 @@ func Index(store repository.Storage) http.HandlerFunc {
 		}
 		sort.Strings(gaugeNames)
 		for _, name := range gaugeNames {
-			fmt.Fprintf(&sb, "<li>%s (gauge) = %s</li>", name, strconv.FormatFloat(gauges[name], 'f', -1, 64))
+			buf.WriteString("<li>")
+			buf.WriteString(name)
+			buf.WriteString(" (gauge) = ")
+			buf.WriteString(strconv.FormatFloat(gauges[name], 'f', -1, 64))
+			buf.WriteString("</li>")
 		}
 
 		counterNames := make([]string, 0, len(counters))
@@ -34,13 +38,17 @@ func Index(store repository.Storage) http.HandlerFunc {
 		}
 		sort.Strings(counterNames)
 		for _, name := range counterNames {
-			fmt.Fprintf(&sb, "<li>%s (counter) = %d</li>", name, counters[name])
+			buf.WriteString("<li>")
+			buf.WriteString(name)
+			buf.WriteString(" (counter) = ")
+			buf.WriteString(strconv.FormatInt(counters[name], 10))
+			buf.WriteString("</li>")
 		}
 
-		sb.WriteString("</ul></body></html>")
+		buf.WriteString("</ul></body></html>")
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, sb.String())
+		_, _ = w.Write(buf.Bytes())
 	}
 }

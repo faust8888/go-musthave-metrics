@@ -86,7 +86,18 @@ func (c *Collector) CollectGopsutil() {
 
 // Snapshot copies current gauges and the accumulated PollCount, then resets the counter.
 func (c *Collector) Snapshot() []models.Metrics {
-	return metricsFrom(c)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	metrics := make([]models.Metrics, 0, len(c.gauges)+1)
+	for name, value := range c.gauges {
+		v := value
+		metrics = append(metrics, models.Metrics{ID: name, MType: models.Gauge, Value: &v})
+	}
+	pc := c.pollCount
+	c.pollCount = 0
+	metrics = append(metrics, models.Metrics{ID: "PollCount", MType: models.Counter, Delta: &pc})
+	return metrics
 }
 
 func (c *Collector) Gauges() map[string]float64 {

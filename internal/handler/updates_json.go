@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 
 	"github.com/faust8888/go-musthave-metrics/internal/audit"
@@ -11,8 +12,13 @@ import (
 
 func UpdatesBatch(store repository.Storage, auditor *audit.Subject) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
 		var metrics []models.Metrics
-		if err := json.NewDecoder(r.Body).Decode(&metrics); err != nil {
+		if err := json.Unmarshal(body, &metrics); err != nil {
 			http.Error(w, "invalid JSON", http.StatusBadRequest)
 			return
 		}
