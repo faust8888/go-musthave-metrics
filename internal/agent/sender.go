@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/faust8888/go-musthave-metrics/internal/hash"
@@ -98,19 +99,37 @@ func (s *Sender) doPost(payload, raw []byte) error {
 	return err
 }
 
+var gzipWriterPool = sync.Pool{
+	New: func() any {
+		w, _ := gzip.NewWriterLevel(io.Discard, gzip.BestSpeed)
+		return w
+	},
+}
+
+var gzipBufPool = sync.Pool{
+	New: func() any {
+		return new(bytes.Buffer)
+	},
+}
+
 func gzipBytes(raw []byte) ([]byte, error) {
-	var buf bytes.Buffer
-	gz, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
-	if err != nil {
-		return nil, fmt.Errorf("gzip new writer: %w", err)
-	}
-	if _, err = gz.Write(raw); err != nil {
+	buf := gzipBufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer gzipBufPool.Put(buf)
+
+	gz := gzipWriterPool.Get().(*gzip.Writer)
+	gz.Reset(buf)
+	defer gzipWriterPool.Put(gz)
+
+	if _, err := gz.Write(raw); err != nil {
 		return nil, fmt.Errorf("gzip write: %w", err)
 	}
-	if err = gz.Close(); err != nil {
+	if err := gz.Close(); err != nil {
 		return nil, fmt.Errorf("gzip close: %w", err)
 	}
-	return buf.Bytes(), nil
+	out := make([]byte, buf.Len())
+	copy(out, buf.Bytes())
+	return out, nil
 }
 
 func isNetworkError(err error) bool {

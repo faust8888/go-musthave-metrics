@@ -6,11 +6,12 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/faust8888/go-musthave-metrics/internal/audit"
 	models "github.com/faust8888/go-musthave-metrics/internal/model"
 	"github.com/faust8888/go-musthave-metrics/internal/repository"
 )
 
-func Update(store repository.Storage) http.HandlerFunc {
+func Update(store repository.Storage, auditor *audit.Subject) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		metricType := chi.URLParam(r, "type")
 		metricName := chi.URLParam(r, "name")
@@ -36,6 +37,7 @@ func Update(store repository.Storage) http.HandlerFunc {
 			return
 		}
 
+		auditor.Record(r, []string{metricName})
 		w.WriteHeader(http.StatusOK)
 	}
 }

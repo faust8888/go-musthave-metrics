@@ -80,7 +80,7 @@ func TestUpdatesJSONHandler(t *testing.T) {
 			req.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()
 
-			handler.UpdatesBatch(store)(w, req)
+			handler.UpdatesBatch(store, nil)(w, req)
 
 			if w.Code != tt.wantCode {
 				t.Errorf("got status %d, want %d", w.Code, tt.wantCode)
@@ -103,7 +103,7 @@ func TestUpdatesJSONHandler_StorageEffect(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	handler.UpdatesBatch(store)(w, req)
+	handler.UpdatesBatch(store, nil)(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("got status %d, want 200", w.Code)
