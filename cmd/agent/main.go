@@ -18,13 +18,19 @@ func main() {
 	addr := flag.String("a", "localhost:8080", "HTTP server address")
 	reportSec := flag.Int("r", 10, "report interval in seconds")
 	pollSec := flag.Int("p", 2, "poll interval in seconds")
+	key := flag.String("k", "", "hash key")
+	rateLimit := flag.Int("l", 1, "max concurrent outgoing requests")
 	flag.Parse()
 
 	envconfig.String("ADDRESS", addr)
+	envconfig.String("KEY", key)
 	if err := envconfig.Int("REPORT_INTERVAL", reportSec); err != nil {
 		log.Fatal(err)
 	}
 	if err := envconfig.Int("POLL_INTERVAL", pollSec); err != nil {
+		log.Fatal(err)
+	}
+	if err := envconfig.Int("RATE_LIMIT", rateLimit); err != nil {
 		log.Fatal(err)
 	}
 
@@ -32,30 +38,12 @@ func main() {
 	pollInterval := time.Duration(*pollSec) * time.Second
 	reportInterval := time.Duration(*reportSec) * time.Second
 
-	collector := agent.NewCollector()
-	sender := agent.NewSender(serverURL)
-
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	pollTicker := time.NewTicker(pollInterval)
-	reportTicker := time.NewTicker(reportInterval)
-	defer pollTicker.Stop()
-	defer reportTicker.Stop()
+	log.Printf("Agent started: server=%s poll=%ds report=%ds rate_limit=%d",
+		serverURL, *pollSec, *reportSec, *rateLimit)
 
-	log.Printf("Agent started: server=%s poll=%ds report=%ds", serverURL, *pollSec, *reportSec)
-
-	for {
-		select {
-		case <-ctx.Done():
-			log.Println("Agent stopped")
-			return
-		case <-pollTicker.C:
-			collector.Collect()
-		case <-reportTicker.C:
-			if err := sender.Send(collector); err != nil {
-				log.Printf("send metrics error: %v", err)
-			}
-		}
-	}
+	agent.New(serverURL, *key, pollInterval, reportInterval, *rateLimit).Run(ctx)
+	log.Println("Agent stopped")
 }
