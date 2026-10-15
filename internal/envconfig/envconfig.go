@@ -1,3 +1,4 @@
+// Package envconfig reads configuration from environment variables.
 package envconfig
 
 import (

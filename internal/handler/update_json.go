@@ -10,6 +10,7 @@ import (
 	"github.com/faust8888/go-musthave-metrics/internal/repository"
 )
 
+// UpdateJSON handles POST /update and stores a single metric from a JSON body.
 func UpdateJSON(store repository.Storage, auditor *audit.Subject) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)

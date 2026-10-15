@@ -10,6 +10,7 @@ import (
 	"github.com/faust8888/go-musthave-metrics/internal/repository"
 )
 
+// UpdatesBatch handles POST /updates/ and stores a JSON array of metrics.
 func UpdatesBatch(store repository.Storage, auditor *audit.Subject) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)

@@ -15,6 +15,7 @@ type HTTPObserver struct {
 	client *http.Client
 }
 
+// NewHTTPObserver posts audit events as JSON to url.
 func NewHTTPObserver(url string) *HTTPObserver {
 	return &HTTPObserver{
 		url:    url,
@@ -22,6 +23,7 @@ func NewHTTPObserver(url string) *HTTPObserver {
 	}
 }
 
+// Update POSTs the event to the configured URL.
 func (o *HTTPObserver) Update(event Event) {
 	body, err := json.Marshal(event)
 	if err != nil {

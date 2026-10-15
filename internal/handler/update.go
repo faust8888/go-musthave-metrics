@@ -11,6 +11,7 @@ import (
 	"github.com/faust8888/go-musthave-metrics/internal/repository"
 )
 
+// Update handles POST /update/{type}/{name}/{value} and stores a single metric.
 func Update(store repository.Storage, auditor *audit.Subject) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		metricType := chi.URLParam(r, "type")

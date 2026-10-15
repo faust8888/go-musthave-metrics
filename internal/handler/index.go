@@ -9,6 +9,7 @@ import (
 	"github.com/faust8888/go-musthave-metrics/internal/repository"
 )
 
+// Index handles GET / and renders an HTML page with all stored metrics.
 func Index(store repository.Storage) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()

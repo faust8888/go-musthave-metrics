@@ -17,11 +17,13 @@ import (
 	"github.com/faust8888/go-musthave-metrics/internal/retry"
 )
 
+// MetricsProvider supplies gauges and the accumulated PollCount for a report.
 type MetricsProvider interface {
 	Gauges() map[string]float64
 	TakeAndResetPollCount() int64
 }
 
+// Sender posts metric batches to the server over HTTP.
 type Sender struct {
 	serverURL   string
 	key         string
@@ -29,6 +31,7 @@ type Sender struct {
 	retryDelays []time.Duration
 }
 
+// NewSender returns a sender for serverURL. A non-empty key signs request bodies.
 func NewSender(serverURL, key string) *Sender {
 	return &Sender{
 		serverURL:   serverURL,
@@ -38,6 +41,7 @@ func NewSender(serverURL, key string) *Sender {
 	}
 }
 
+// NewSenderWithDelays is like NewSender but uses custom retry delays.
 func NewSenderWithDelays(serverURL, key string, delays []time.Duration) *Sender {
 	return &Sender{
 		serverURL:   serverURL,

@@ -1,3 +1,4 @@
+// Package hash computes and verifies HMAC-SHA256 signatures for HTTP bodies.
 package hash
 
 import (

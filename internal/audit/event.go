@@ -9,9 +9,12 @@ import (
 
 // Event is a single audit record emitted after metrics were accepted.
 type Event struct {
-	TS        int64    `json:"ts"`
-	Metrics   []string `json:"metrics"`
-	IPAddress string   `json:"ip_address"`
+	// TS is the Unix timestamp when the metrics were accepted.
+	TS int64 `json:"ts"`
+	// Metrics lists the names of the stored metrics.
+	Metrics []string `json:"metrics"`
+	// IPAddress is the client IP that sent the request.
+	IPAddress string `json:"ip_address"`
 }
 
 func newEvent(r *http.Request, metrics []string) Event {

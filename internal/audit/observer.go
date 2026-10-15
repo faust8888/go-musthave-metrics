@@ -1,3 +1,4 @@
+// Package audit implements the Observer pattern for metric-update audit events.
 package audit
 
 import (
@@ -7,6 +8,7 @@ import (
 
 // Observer receives audit events (the observer side of the pattern).
 type Observer interface {
+	// Update is called when a new audit event is emitted.
 	Update(Event)
 }
 
@@ -28,6 +30,7 @@ func New(filePath, url string) *Subject {
 	return s
 }
 
+// Attach registers an observer that will receive subsequent events.
 func (s *Subject) Attach(o Observer) {
 	if o == nil {
 		return
