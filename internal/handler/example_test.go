@@ -45,7 +45,11 @@ func ExampleValue() {
 	ts := httptest.NewServer(exampleRouter())
 	defer ts.Close()
 
-	_, _ = http.Post(ts.URL+"/update/counter/PollCount/7", "text/plain", nil)
+	setup, err := http.Post(ts.URL+"/update/counter/PollCount/7", "text/plain", nil)
+	if err != nil {
+		panic(err)
+	}
+	_ = setup.Body.Close()
 	resp, err := http.Get(ts.URL + "/value/counter/PollCount")
 	if err != nil {
 		panic(err)
@@ -79,8 +83,12 @@ func ExampleValueJSON() {
 	ts := httptest.NewServer(exampleRouter())
 	defer ts.Close()
 
-	_, _ = http.Post(ts.URL+"/update", "application/json",
+	setup, err := http.Post(ts.URL+"/update", "application/json",
 		strings.NewReader(`{"id":"Alloc","type":"gauge","value":42}`))
+	if err != nil {
+		panic(err)
+	}
+	_ = setup.Body.Close()
 	resp, err := http.Post(ts.URL+"/value", "application/json",
 		strings.NewReader(`{"id":"Alloc","type":"gauge"}`))
 	if err != nil {
@@ -117,7 +125,11 @@ func ExampleIndex() {
 	ts := httptest.NewServer(exampleRouter())
 	defer ts.Close()
 
-	_, _ = http.Post(ts.URL+"/update/gauge/Alloc/1", "text/plain", nil)
+	setup, err := http.Post(ts.URL+"/update/gauge/Alloc/1", "text/plain", nil)
+	if err != nil {
+		panic(err)
+	}
+	_ = setup.Body.Close()
 	resp, err := http.Get(ts.URL + "/")
 	if err != nil {
 		panic(err)
