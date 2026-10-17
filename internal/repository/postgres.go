@@ -52,10 +52,12 @@ type PostgresStorage struct {
 	db *sql.DB
 }
 
+// NewPostgresStorage returns a Storage backed by db.
 func NewPostgresStorage(db *sql.DB) *PostgresStorage {
 	return &PostgresStorage{db: db}
 }
 
+// UpdateGauge upserts the gauge in PostgreSQL.
 func (s *PostgresStorage) UpdateGauge(ctx context.Context, name string, value float64) {
 	_ = retry.Do(func() error {
 		_, err := s.db.ExecContext(ctx,
@@ -66,6 +68,7 @@ func (s *PostgresStorage) UpdateGauge(ctx context.Context, name string, value fl
 	}, isPgConnError, retry.DefaultDelays)
 }
 
+// UpdateCounter adds value to the counter in PostgreSQL.
 func (s *PostgresStorage) UpdateCounter(ctx context.Context, name string, value int64) {
 	_ = retry.Do(func() error {
 		_, err := s.db.ExecContext(ctx,
@@ -76,6 +79,7 @@ func (s *PostgresStorage) UpdateCounter(ctx context.Context, name string, value 
 	}, isPgConnError, retry.DefaultDelays)
 }
 
+// GetGauge returns the gauge value and whether it exists.
 func (s *PostgresStorage) GetGauge(ctx context.Context, name string) (float64, bool) {
 	var v float64
 	err := retry.Do(func() error {
@@ -88,6 +92,7 @@ func (s *PostgresStorage) GetGauge(ctx context.Context, name string) (float64, b
 	return v, true
 }
 
+// GetCounter returns the counter value and whether it exists.
 func (s *PostgresStorage) GetCounter(ctx context.Context, name string) (int64, bool) {
 	var d int64
 	err := retry.Do(func() error {
@@ -100,6 +105,7 @@ func (s *PostgresStorage) GetCounter(ctx context.Context, name string) (int64, b
 	return d, true
 }
 
+// GetAllGauges returns all gauges from PostgreSQL.
 func (s *PostgresStorage) GetAllGauges(ctx context.Context) map[string]float64 {
 	var out map[string]float64
 	_ = retry.Do(func() error {
@@ -125,6 +131,7 @@ func (s *PostgresStorage) GetAllGauges(ctx context.Context) map[string]float64 {
 	return out
 }
 
+// GetAllCounters returns all counters from PostgreSQL.
 func (s *PostgresStorage) GetAllCounters(ctx context.Context) map[string]int64 {
 	var out map[string]int64
 	_ = retry.Do(func() error {
@@ -150,6 +157,7 @@ func (s *PostgresStorage) GetAllCounters(ctx context.Context) map[string]int64 {
 	return out
 }
 
+// UpdateBatch writes the metrics in a single transaction.
 func (s *PostgresStorage) UpdateBatch(ctx context.Context, metrics []models.Metrics) error {
 	return retry.Do(func() error {
 		return s.execBatch(ctx, metrics)

@@ -12,18 +12,21 @@ import (
 	models "github.com/faust8888/go-musthave-metrics/internal/model"
 )
 
+// Collector holds the latest runtime and gopsutil gauges plus PollCount.
 type Collector struct {
 	mu        sync.Mutex
 	gauges    map[string]float64
 	pollCount int64
 }
 
+// NewCollector returns an empty collector.
 func NewCollector() *Collector {
 	return &Collector{
 		gauges: make(map[string]float64),
 	}
 }
 
+// Collect reads runtime.MemStats and a random gauge, then increments PollCount.
 func (c *Collector) Collect() {
 	var ms runtime.MemStats
 	runtime.ReadMemStats(&ms)
@@ -86,9 +89,21 @@ func (c *Collector) CollectGopsutil() {
 
 // Snapshot copies current gauges and the accumulated PollCount, then resets the counter.
 func (c *Collector) Snapshot() []models.Metrics {
-	return metricsFrom(c)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	metrics := make([]models.Metrics, 0, len(c.gauges)+1)
+	for name, value := range c.gauges {
+		v := value
+		metrics = append(metrics, models.Metrics{ID: name, MType: models.Gauge, Value: &v})
+	}
+	pc := c.pollCount
+	c.pollCount = 0
+	metrics = append(metrics, models.Metrics{ID: "PollCount", MType: models.Counter, Delta: &pc})
+	return metrics
 }
 
+// Gauges returns a copy of the current gauge map.
 func (c *Collector) Gauges() map[string]float64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -100,12 +115,14 @@ func (c *Collector) Gauges() map[string]float64 {
 	return snapshot
 }
 
+// PollCount returns the number of Collect calls since the last reset.
 func (c *Collector) PollCount() int64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.pollCount
 }
 
+// TakeAndResetPollCount returns PollCount and resets it to zero.
 func (c *Collector) TakeAndResetPollCount() int64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()

@@ -1,3 +1,4 @@
+// Package middleware provides HTTP middleware for logging, gzip and HMAC signing.
 package middleware
 
 import (
@@ -24,6 +25,7 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 	return n, err
 }
 
+// Logger logs URI, method, status, size and duration of each request.
 func Logger(logger *zap.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -35,3 +35,24 @@ func TestIndexHandler(t *testing.T) {
 		t.Errorf("Content-Type: got %q, want text/html", ct)
 	}
 }
+
+func TestIndexHandler_EscapesMetricNames(t *testing.T) {
+	store := repository.NewMemStorage()
+	store.UpdateGauge(context.Background(), `<script>alert("g")</script>`, 1)
+	store.UpdateCounter(context.Background(), `<script>alert("c")</script>`, 2)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	handler.Index(store)(w, req)
+
+	body := w.Body.String()
+	if strings.Contains(body, `<script>`) {
+		t.Fatalf("unescaped script tag in HTML: %s", body)
+	}
+	if !strings.Contains(body, `&lt;script&gt;alert(&#34;g&#34;)&lt;/script&gt;`) {
+		t.Errorf("escaped gauge name missing: %s", body)
+	}
+	if !strings.Contains(body, `&lt;script&gt;alert(&#34;c&#34;)&lt;/script&gt;`) {
+		t.Errorf("escaped counter name missing: %s", body)
+	}
+}
