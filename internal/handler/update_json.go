@@ -5,13 +5,12 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/faust8888/go-musthave-metrics/internal/audit"
 	models "github.com/faust8888/go-musthave-metrics/internal/model"
 	"github.com/faust8888/go-musthave-metrics/internal/repository"
 )
 
 // UpdateJSON handles POST /update and stores a single metric from a JSON body.
-func UpdateJSON(store repository.Storage, auditor *audit.Subject) http.HandlerFunc {
+func UpdateJSON(store repository.Storage, auditor Auditor) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -45,7 +44,7 @@ func UpdateJSON(store repository.Storage, auditor *audit.Subject) http.HandlerFu
 			return
 		}
 
-		auditor.Record(r, []string{m.ID})
+		recordAudit(auditor, r, []string{m.ID})
 		writeJSON(w, m)
 	}
 }

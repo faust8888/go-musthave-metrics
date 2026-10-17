@@ -5,13 +5,12 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/faust8888/go-musthave-metrics/internal/audit"
 	models "github.com/faust8888/go-musthave-metrics/internal/model"
 	"github.com/faust8888/go-musthave-metrics/internal/repository"
 )
 
 // UpdatesBatch handles POST /updates/ and stores a JSON array of metrics.
-func UpdatesBatch(store repository.Storage, auditor *audit.Subject) http.HandlerFunc {
+func UpdatesBatch(store repository.Storage, auditor Auditor) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -52,7 +51,7 @@ func UpdatesBatch(store repository.Storage, auditor *audit.Subject) http.Handler
 		for _, m := range metrics {
 			names = append(names, m.ID)
 		}
-		auditor.Record(r, names)
+		recordAudit(auditor, r, names)
 		w.WriteHeader(http.StatusOK)
 	}
 }

@@ -8,7 +8,7 @@ import (
 func writeJSON(w http.ResponseWriter, v any) {
 	data, err := json.Marshal(v)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "failed to encode response", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

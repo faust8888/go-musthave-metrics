@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"html"
 	"net/http"
 	"sort"
 	"strconv"
@@ -27,7 +28,7 @@ func Index(store repository.Storage) http.HandlerFunc {
 		sort.Strings(gaugeNames)
 		for _, name := range gaugeNames {
 			buf.WriteString("<li>")
-			buf.WriteString(name)
+			buf.WriteString(html.EscapeString(name))
 			buf.WriteString(" (gauge) = ")
 			buf.WriteString(strconv.FormatFloat(gauges[name], 'f', -1, 64))
 			buf.WriteString("</li>")
@@ -40,7 +41,7 @@ func Index(store repository.Storage) http.HandlerFunc {
 		sort.Strings(counterNames)
 		for _, name := range counterNames {
 			buf.WriteString("<li>")
-			buf.WriteString(name)
+			buf.WriteString(html.EscapeString(name))
 			buf.WriteString(" (counter) = ")
 			buf.WriteString(strconv.FormatInt(counters[name], 10))
 			buf.WriteString("</li>")

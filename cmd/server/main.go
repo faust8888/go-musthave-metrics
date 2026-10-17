@@ -71,7 +71,11 @@ func main() {
 	store, cleanup := newStorage(ctx, db, *filePath, *storeInterval, *restore, logger)
 	defer cleanup()
 
-	auditor := audit.New(*auditFile, *auditURL)
+	auditor, auditErr := audit.New(*auditFile, *auditURL)
+	if auditErr != nil {
+		log.Fatal("audit: ", auditErr)
+	}
+	defer auditor.Close()
 
 	r := chi.NewRouter()
 	r.Use(middleware.GzipDecompress)

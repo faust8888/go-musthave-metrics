@@ -29,10 +29,10 @@ func populatedStore() repository.Storage {
 
 func BenchmarkIndex(b *testing.B) {
 	h := handler.Index(populatedStore())
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, req)
 	}
@@ -93,11 +93,11 @@ func BenchmarkValueJSON(b *testing.B) {
 
 func BenchmarkGzipIndex(b *testing.B) {
 	h := middleware.GzipCompress(handler.Index(populatedStore()))
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Accept-Encoding", "gzip")
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
-		req.Header.Set("Accept-Encoding", "gzip")
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, req)
 	}

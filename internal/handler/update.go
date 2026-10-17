@@ -6,13 +6,12 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/faust8888/go-musthave-metrics/internal/audit"
 	models "github.com/faust8888/go-musthave-metrics/internal/model"
 	"github.com/faust8888/go-musthave-metrics/internal/repository"
 )
 
 // Update handles POST /update/{type}/{name}/{value} and stores a single metric.
-func Update(store repository.Storage, auditor *audit.Subject) http.HandlerFunc {
+func Update(store repository.Storage, auditor Auditor) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		metricType := chi.URLParam(r, "type")
 		metricName := chi.URLParam(r, "name")
@@ -38,7 +37,7 @@ func Update(store repository.Storage, auditor *audit.Subject) http.HandlerFunc {
 			return
 		}
 
-		auditor.Record(r, []string{metricName})
+		recordAudit(auditor, r, []string{metricName})
 		w.WriteHeader(http.StatusOK)
 	}
 }

@@ -2,57 +2,83 @@ package audit
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 )
 
-type recordingObserver struct {
+type recordingSink struct {
 	mu     sync.Mutex
 	events []Event
 }
 
-func (o *recordingObserver) Update(e Event) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	o.events = append(o.events, e)
+func (s *recordingSink) Write(e Event) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.events = append(s.events, e)
 }
 
-func TestSubject_NotifyAllObservers(t *testing.T) {
-	s := New("", "")
-	a := &recordingObserver{}
-	b := &recordingObserver{}
-	s.Attach(a)
-	s.Attach(b)
+func (s *recordingSink) snapshot() []Event {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]Event, len(s.events))
+	copy(out, s.events)
+	return out
+}
+
+func newTestAuditor(t *testing.T) *Auditor {
+	t.Helper()
+	a, err := New("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = a.Close() })
+	return a
+}
+
+func TestAuditor_NotifyAllSinks(t *testing.T) {
+	a := newTestAuditor(t)
+	first := &recordingSink{}
+	second := &recordingSink{}
+	a.Add(first)
+	a.Add(second)
 
 	event := Event{TS: 1, Metrics: []string{"Alloc"}, IPAddress: "127.0.0.1"}
-	s.Notify(event)
+	a.Notify(event)
 
-	if len(a.events) != 1 || len(b.events) != 1 {
-		t.Fatalf("want 1 event each, got a=%d b=%d", len(a.events), len(b.events))
+	if len(first.events) != 1 || len(second.events) != 1 {
+		t.Fatalf("want 1 event each, got a=%d b=%d", len(first.events), len(second.events))
 	}
-	if a.events[0].Metrics[0] != "Alloc" || b.events[0].IPAddress != "127.0.0.1" {
-		t.Errorf("observers got unexpected event: %+v %+v", a.events[0], b.events[0])
+	if first.events[0].Metrics[0] != "Alloc" || second.events[0].IPAddress != "127.0.0.1" {
+		t.Errorf("sinks got unexpected event: %+v %+v", first.events[0], second.events[0])
 	}
 }
 
-func TestSubject_RecordNilSafe(t *testing.T) {
-	var s *Subject
+func TestAuditor_RecordNilSafe(t *testing.T) {
+	var a *Auditor
 	req := httptest.NewRequest(http.MethodPost, "/update", nil)
-	s.Record(req, []string{"Alloc"})
+	a.Record(req, []string{"Alloc"})
+	_ = a.Close()
 }
 
-func TestFileObserver_AppendsJSONLine(t *testing.T) {
+func TestFileSink_AppendsJSONLine(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "audit.log")
-	obs := NewFileObserver(path)
+	sink, err := NewFileSink(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sink.Close() })
 
-	obs.Update(Event{TS: 42, Metrics: []string{"Alloc", "Frees"}, IPAddress: "192.168.0.42"})
-	obs.Update(Event{TS: 43, Metrics: []string{"HeapSys"}, IPAddress: "10.0.0.1"})
+	sink.Write(Event{TS: 42, Metrics: []string{"Alloc", "Frees"}, IPAddress: "192.168.0.42"})
+	sink.Write(Event{TS: 43, Metrics: []string{"HeapSys"}, IPAddress: "10.0.0.1"})
 
 	f, err := os.Open(path)
 	if err != nil {
@@ -83,7 +109,19 @@ func TestFileObserver_AppendsJSONLine(t *testing.T) {
 	}
 }
 
-func TestHTTPObserver_PostsJSON(t *testing.T) {
+func TestFileSink_OpenFailsOnBadPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing", "audit.log")
+	_, err := NewFileSink(path)
+	if err == nil {
+		t.Fatal("want error for missing parent directory")
+	}
+	_, err = New(path, "")
+	if err == nil {
+		t.Fatal("New should fail when the audit file cannot be opened")
+	}
+}
+
+func TestHTTPSink_PostsJSON(t *testing.T) {
 	var got Event
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -99,7 +137,7 @@ func TestHTTPObserver_PostsJSON(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	NewHTTPObserver(srv.URL).Update(Event{
+	NewHTTPSink(srv.URL).Write(Event{
 		TS:        99,
 		Metrics:   []string{"PollCount"},
 		IPAddress: "127.0.0.1",
@@ -107,6 +145,24 @@ func TestHTTPObserver_PostsJSON(t *testing.T) {
 
 	if got.TS != 99 || got.IPAddress != "127.0.0.1" || len(got.Metrics) != 1 || got.Metrics[0] != "PollCount" {
 		t.Errorf("posted event: %+v", got)
+	}
+}
+
+func TestHTTPSink_LogsNonSuccessStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	var buf bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(prev) })
+
+	NewHTTPSink(srv.URL).Write(Event{TS: 1, Metrics: []string{"Alloc"}, IPAddress: "127.0.0.1"})
+
+	if !strings.Contains(buf.String(), "audit http status: 500") {
+		t.Errorf("want status log, got %q", buf.String())
 	}
 }
 
@@ -129,20 +185,22 @@ func TestClientIP(t *testing.T) {
 }
 
 func TestRecord_BuildsEvent(t *testing.T) {
-	obs := &recordingObserver{}
-	s := New("", "")
-	s.Attach(obs)
+	sink := &recordingSink{}
+	a := newTestAuditor(t)
+	a.Add(sink)
 
 	req := httptest.NewRequest(http.MethodPost, "/updates/", nil)
 	req.RemoteAddr = "192.168.0.42:9"
 	before := time.Now().Unix()
-	s.Record(req, []string{"Alloc", "Frees"})
+	a.Record(req, []string{"Alloc", "Frees"})
+	a.Flush()
 	after := time.Now().Unix()
 
-	if len(obs.events) != 1 {
-		t.Fatalf("want 1 event, got %d", len(obs.events))
+	events := sink.snapshot()
+	if len(events) != 1 {
+		t.Fatalf("want 1 event, got %d", len(events))
 	}
-	e := obs.events[0]
+	e := events[0]
 	if e.IPAddress != "192.168.0.42" {
 		t.Errorf("ip: got %q", e.IPAddress)
 	}

@@ -15,18 +15,28 @@ import (
 	"github.com/faust8888/go-musthave-metrics/internal/repository"
 )
 
-type captureObserver struct {
+type captureSink struct {
 	events []audit.Event
 }
 
-func (o *captureObserver) Update(e audit.Event) {
-	o.events = append(o.events, e)
+func (s *captureSink) Write(e audit.Event) {
+	s.events = append(s.events, e)
+}
+
+func newHandlerAuditor(t *testing.T) *audit.Auditor {
+	t.Helper()
+	a, err := audit.New("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = a.Close() })
+	return a
 }
 
 func TestUpdate_AuditsSuccessfulRequest(t *testing.T) {
-	obs := &captureObserver{}
-	auditor := audit.New("", "")
-	auditor.Attach(obs)
+	sink := &captureSink{}
+	auditor := newHandlerAuditor(t)
+	auditor.Add(sink)
 
 	store := repository.NewMemStorage()
 	r := chi.NewRouter()
@@ -36,25 +46,26 @@ func TestUpdate_AuditsSuccessfulRequest(t *testing.T) {
 	req.RemoteAddr = "192.168.0.42:1234"
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
+	auditor.Flush()
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status: got %d", w.Code)
 	}
-	if len(obs.events) != 1 {
-		t.Fatalf("want 1 audit event, got %d", len(obs.events))
+	if len(sink.events) != 1 {
+		t.Fatalf("want 1 audit event, got %d", len(sink.events))
 	}
-	if obs.events[0].Metrics[0] != "Alloc" {
-		t.Errorf("metric: got %v", obs.events[0].Metrics)
+	if sink.events[0].Metrics[0] != "Alloc" {
+		t.Errorf("metric: got %v", sink.events[0].Metrics)
 	}
-	if obs.events[0].IPAddress != "192.168.0.42" {
-		t.Errorf("ip: got %q", obs.events[0].IPAddress)
+	if sink.events[0].IPAddress != "192.168.0.42" {
+		t.Errorf("ip: got %q", sink.events[0].IPAddress)
 	}
 }
 
 func TestUpdate_DoesNotAuditInvalidRequest(t *testing.T) {
-	obs := &captureObserver{}
-	auditor := audit.New("", "")
-	auditor.Attach(obs)
+	sink := &captureSink{}
+	auditor := newHandlerAuditor(t)
+	auditor.Add(sink)
 
 	store := repository.NewMemStorage()
 	r := chi.NewRouter()
@@ -62,19 +73,20 @@ func TestUpdate_DoesNotAuditInvalidRequest(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/update/unknown/x/1", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
+	auditor.Flush()
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status: got %d, want 400", w.Code)
 	}
-	if len(obs.events) != 0 {
-		t.Errorf("invalid request must not be audited, got %d events", len(obs.events))
+	if len(sink.events) != 0 {
+		t.Errorf("invalid request must not be audited, got %d events", len(sink.events))
 	}
 }
 
 func TestUpdatesBatch_AuditsMetricNames(t *testing.T) {
-	obs := &captureObserver{}
-	auditor := audit.New("", "")
-	auditor.Attach(obs)
+	sink := &captureSink{}
+	auditor := newHandlerAuditor(t)
+	auditor.Add(sink)
 
 	body, _ := json.Marshal([]models.Metrics{
 		{ID: "Alloc", MType: models.Gauge, Value: ptr(1.0)},
@@ -83,14 +95,15 @@ func TestUpdatesBatch_AuditsMetricNames(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/updates/", bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	handler.UpdatesBatch(repository.NewMemStorage(), auditor)(w, req)
+	auditor.Flush()
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status: got %d", w.Code)
 	}
-	if len(obs.events) != 1 {
-		t.Fatalf("want 1 event, got %d", len(obs.events))
+	if len(sink.events) != 1 {
+		t.Fatalf("want 1 event, got %d", len(sink.events))
 	}
-	got := obs.events[0].Metrics
+	got := sink.events[0].Metrics
 	if len(got) != 2 || got[0] != "Alloc" || got[1] != "Frees" {
 		t.Errorf("metrics: got %v", got)
 	}
