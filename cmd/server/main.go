@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os/signal"
@@ -21,7 +22,15 @@ import (
 	"github.com/faust8888/go-musthave-metrics/internal/repository"
 )
 
+var (
+	buildVersion string
+	buildDate    string
+	buildCommit  string
+)
+
 func main() {
+	printBuildInfo()
+
 	addr := flag.String("a", "localhost:8080", "HTTP server address")
 	storeInterval := flag.Int("i", 300, "store interval in seconds (0 = sync)")
 	filePath := flag.String("f", "/tmp/metrics-db.json", "file storage path")
@@ -108,4 +117,17 @@ func main() {
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
+}
+
+func printBuildInfo() {
+	fmt.Printf("Build version: %s\n", valueOrNA(buildVersion))
+	fmt.Printf("Build date: %s\n", valueOrNA(buildDate))
+	fmt.Printf("Build commit: %s\n", valueOrNA(buildCommit))
+}
+
+func valueOrNA(v string) string {
+	if v == "" {
+		return "N/A"
+	}
+	return v
 }
