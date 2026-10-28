@@ -7,6 +7,7 @@ const Counter = "counter"
 // Gauge is the metric type that stores the latest floating-point value.
 const Gauge = "gauge"
 
+// generate:reset
 // Metrics is a single metric in JSON API requests and responses.
 //
 // Delta and Value are pointers so that a missing field can be distinguished
