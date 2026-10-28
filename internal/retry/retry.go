@@ -1,3 +1,4 @@
+// Package retry retries operations with a fixed sequence of backoff delays.
 package retry
 
 import "time"

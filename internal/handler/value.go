@@ -11,6 +11,7 @@ import (
 	"github.com/faust8888/go-musthave-metrics/internal/repository"
 )
 
+// Value handles GET /value/{type}/{name} and writes the metric as plain text.
 func Value(store repository.Storage) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		metricType := chi.URLParam(r, "type")

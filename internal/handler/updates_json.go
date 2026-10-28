@@ -2,16 +2,23 @@ package handler
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 
 	models "github.com/faust8888/go-musthave-metrics/internal/model"
 	"github.com/faust8888/go-musthave-metrics/internal/repository"
 )
 
-func UpdatesBatch(store repository.Storage) http.HandlerFunc {
+// UpdatesBatch handles POST /updates/ and stores a JSON array of metrics.
+func UpdatesBatch(store repository.Storage, auditor Auditor) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
 		var metrics []models.Metrics
-		if err := json.NewDecoder(r.Body).Decode(&metrics); err != nil {
+		if err := json.Unmarshal(body, &metrics); err != nil {
 			http.Error(w, "invalid JSON", http.StatusBadRequest)
 			return
 		}
@@ -40,6 +47,11 @@ func UpdatesBatch(store repository.Storage) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		names := make([]string, 0, len(metrics))
+		for _, m := range metrics {
+			names = append(names, m.ID)
+		}
+		recordAudit(auditor, r, names)
 		w.WriteHeader(http.StatusOK)
 	}
 }

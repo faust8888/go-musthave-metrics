@@ -2,16 +2,23 @@ package handler
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 
 	models "github.com/faust8888/go-musthave-metrics/internal/model"
 	"github.com/faust8888/go-musthave-metrics/internal/repository"
 )
 
+// ValueJSON handles POST /value and returns the requested metric as JSON.
 func ValueJSON(store repository.Storage) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
 		var m models.Metrics
-		if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
+		if err := json.Unmarshal(body, &m); err != nil {
 			http.Error(w, "invalid JSON", http.StatusBadRequest)
 			return
 		}
@@ -37,7 +44,6 @@ func ValueJSON(store repository.Storage) http.HandlerFunc {
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(m)
+		writeJSON(w, m)
 	}
 }

@@ -19,6 +19,7 @@ type FileStorage struct {
 	syncWrite bool
 }
 
+// NewFileStorage returns a store that can persist metrics to path.
 func NewFileStorage(path string, syncWrite bool) *FileStorage {
 	return &FileStorage{
 		MemStorage: NewMemStorage(),
@@ -27,6 +28,7 @@ func NewFileStorage(path string, syncWrite bool) *FileStorage {
 	}
 }
 
+// UpdateGauge stores the gauge and optionally writes the file.
 func (fs *FileStorage) UpdateGauge(ctx context.Context, name string, value float64) {
 	fs.MemStorage.UpdateGauge(ctx, name, value)
 	if fs.syncWrite {
@@ -34,6 +36,7 @@ func (fs *FileStorage) UpdateGauge(ctx context.Context, name string, value float
 	}
 }
 
+// UpdateCounter stores the counter and optionally writes the file.
 func (fs *FileStorage) UpdateCounter(ctx context.Context, name string, value int64) {
 	fs.MemStorage.UpdateCounter(ctx, name, value)
 	if fs.syncWrite {
@@ -41,6 +44,7 @@ func (fs *FileStorage) UpdateCounter(ctx context.Context, name string, value int
 	}
 }
 
+// UpdateBatch stores the batch and optionally writes the file.
 func (fs *FileStorage) UpdateBatch(ctx context.Context, metrics []models.Metrics) error {
 	_ = fs.MemStorage.UpdateBatch(ctx, metrics)
 	if fs.syncWrite {
@@ -49,6 +53,7 @@ func (fs *FileStorage) UpdateBatch(ctx context.Context, metrics []models.Metrics
 	return nil
 }
 
+// Save writes all metrics to the JSON file.
 func (fs *FileStorage) Save() error {
 	gauges := fs.GetAllGauges(context.Background())
 	counters := fs.GetAllCounters(context.Background())
@@ -86,6 +91,7 @@ func (fs *FileStorage) Save() error {
 	return os.Rename(tmpName, fs.path)
 }
 
+// Load restores metrics from the JSON file. A missing file is not an error.
 func (fs *FileStorage) Load() error {
 	data, err := os.ReadFile(fs.path)
 	if errors.Is(err, iofs.ErrNotExist) {

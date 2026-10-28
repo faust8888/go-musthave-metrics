@@ -1,3 +1,4 @@
+// Package agent collects runtime metrics and reports them to the server.
 package agent
 
 import (
@@ -19,6 +20,8 @@ type Agent struct {
 	workers   int
 }
 
+// New creates an agent that polls every poll interval and reports every report
+// interval using at most rateLimit concurrent HTTP workers.
 func New(serverURL, key string, poll, report time.Duration, rateLimit int) *Agent {
 	if rateLimit < 1 {
 		rateLimit = 1

@@ -42,3 +42,41 @@ git fetch template && git checkout template/v2 .github
 - **Clean Architecture**
 - **Hexagonal Architecture**
 - **Layered Architecture**
+
+## Бенчмарки и профилирование памяти
+
+Бенчмарки важнейших компонентов:
+
+```
+go test -bench=. -benchmem ./internal/handler ./internal/agent ./internal/hash
+```
+
+Профили аллокаций сняты командой `go test -bench=. -memprofile=profiles/<name>.pprof ./internal/handler`:
+- `profiles/base.pprof` — до оптимизаций;
+- `profiles/result.pprof` — после пула gzip-писателей, `json.Unmarshal` вместо `Decoder` и прямой записи HTML без `fmt.Fprintf`.
+
+Сравнение профилей:
+
+```
+go tool pprof -top -diff_base=profiles/base.pprof profiles/result.pprof
+```
+
+```
+File: handler.test
+Type: alloc_space
+Time: 2026-10-15 00:04:06 MSK
+Showing nodes accounting for -3332.11MB, 53.18% of 6265.20MB total
+Dropped 91 nodes (cum <= 31.33MB)
+      flat  flat%   sum%        cum   cum%
+-1248.99MB 19.94% 19.94% -2261.27MB 36.09%  compress/flate.NewWriter (inline)
+ -635.69MB 10.15% 30.08% -1012.28MB 16.16%  compress/flate.(*compressor).init
+ -406.52MB  6.49% 36.57%  -406.52MB  6.49%  bufio.NewReaderSize (inline)
+ -369.58MB  5.90% 42.47%  -369.58MB  5.90%  compress/flate.newDeflateFast (inline)
+ -272.28MB  4.35% 46.82%  -272.28MB  4.35%  strings.(*Builder).Write
+ -249.20MB  3.98% 50.79%  -249.20MB  3.98%  encoding/json.(*Decoder).refill
+  166.09MB  2.65% 48.14%   166.09MB  2.65%  io.ReadAll
+ -118.51MB  1.89% 50.03%  -419.22MB  6.69%  github.com/faust8888/go-musthave-metrics/internal/handler_test.BenchmarkIndex.Index.func1
+ -107.03MB  1.71% 51.74%  -107.03MB  1.71%  encoding/json.NewDecoder (partial-inline)
+```
+
+Отрицательные значения означают, что после оптимизаций объём аллокаций снизился. Основной выигрыш дал пул `gzip.Writer`: в `BenchmarkGzipIndex` расход памяти упал с ~1.2 MB/op до ~18 KB/op.
