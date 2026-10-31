@@ -43,6 +43,28 @@ git fetch template && git checkout template/v2 .github
 - **Hexagonal Architecture**
 - **Layered Architecture**
 
+## Сборка с версией, датой и коммитом
+
+`cmd/server` и `cmd/agent` читают `main.buildVersion`, `main.buildDate` и `main.buildCommit`.
+Без `-ldflags` все три равны `N/A`. Чтобы проставить значения при сборке, используйте `-X`:
+
+```
+VERSION=$(git describe --tags --always)
+DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+COMMIT=$(git rev-parse --short HEAD)
+
+go build -ldflags "-X main.buildVersion=${VERSION} -X main.buildDate=${DATE} -X main.buildCommit=${COMMIT}" -o server ./cmd/server
+go build -ldflags "-X main.buildVersion=${VERSION} -X main.buildDate=${DATE} -X main.buildCommit=${COMMIT}" -o agent ./cmd/agent
+```
+
+При старте бинарник печатает в stdout:
+
+```
+Build version: <buildVersion>
+Build date: <buildDate>
+Build commit: <buildCommit>
+```
+
 ## Бенчмарки и профилирование памяти
 
 Бенчмарки важнейших компонентов:

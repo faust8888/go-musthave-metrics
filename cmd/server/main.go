@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"flag"
-	"fmt"
 	"log"
 	"net/http"
 	"os/signal"
@@ -16,6 +15,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/faust8888/go-musthave-metrics/internal/audit"
+	"github.com/faust8888/go-musthave-metrics/internal/buildinfo"
 	"github.com/faust8888/go-musthave-metrics/internal/envconfig"
 	"github.com/faust8888/go-musthave-metrics/internal/handler"
 	"github.com/faust8888/go-musthave-metrics/internal/middleware"
@@ -23,13 +23,13 @@ import (
 )
 
 var (
-	buildVersion string
-	buildDate    string
-	buildCommit  string
+	buildVersion = "N/A"
+	buildDate    = "N/A"
+	buildCommit  = "N/A"
 )
 
 func main() {
-	printBuildInfo()
+	buildinfo.Print(buildVersion, buildDate, buildCommit)
 
 	addr := flag.String("a", "localhost:8080", "HTTP server address")
 	storeInterval := flag.Int("i", 300, "store interval in seconds (0 = sync)")
@@ -117,17 +117,4 @@ func main() {
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
-}
-
-func printBuildInfo() {
-	fmt.Printf("Build version: %s\n", valueOrNA(buildVersion))
-	fmt.Printf("Build date: %s\n", valueOrNA(buildDate))
-	fmt.Printf("Build commit: %s\n", valueOrNA(buildCommit))
-}
-
-func valueOrNA(v string) string {
-	if v == "" {
-		return "N/A"
-	}
-	return v
 }

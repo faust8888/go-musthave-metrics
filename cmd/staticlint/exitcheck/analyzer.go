@@ -51,7 +51,7 @@ func isOsExit(pass *analysis.Pass, call *ast.CallExpr) bool {
 	if !ok {
 		return false
 	}
-	obj, ok := pass.TypesInfo.ObjectOf(sel.Sel).(*types.Func)
+	obj, ok := pass.TypesInfo.Uses[sel.Sel].(*types.Func)
 	if !ok {
 		return false
 	}

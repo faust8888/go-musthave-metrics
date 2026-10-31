@@ -15,13 +15,15 @@ type Resetter interface {
 // before the object goes back into the pool.
 type Pool[T Resetter] struct {
 	inner sync.Pool
+	new   func() T
 }
 
-// New creates an empty pool for T.
-func New[T Resetter]() *Pool[T] {
-	p := &Pool[T]{}
+// New creates a pool that allocates missing objects with newFunc,
+// the same role as sync.Pool.New.
+func New[T Resetter](newFunc func() T) *Pool[T] {
+	p := &Pool[T]{new: newFunc}
 	p.inner.New = func() any {
-		return alloc[T]()
+		return newFunc()
 	}
 	return p
 }
@@ -30,7 +32,7 @@ func New[T Resetter]() *Pool[T] {
 func (p *Pool[T]) Get() T {
 	v := p.inner.Get().(T)
 	if isNil(v) {
-		return alloc[T]()
+		return p.new()
 	}
 	return v
 }
@@ -51,13 +53,4 @@ func isNil[T any](v T) bool {
 		return rv.IsNil()
 	}
 	return false
-}
-
-func alloc[T any]() T {
-	rt := reflect.TypeOf((*T)(nil)).Elem()
-	if rt.Kind() == reflect.Ptr {
-		return reflect.New(rt.Elem()).Interface().(T)
-	}
-	var v T
-	return v
 }

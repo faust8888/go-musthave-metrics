@@ -22,8 +22,10 @@ func (i *item) Reset() {
 	i.v = i.v[:0]
 }
 
+func newItem() *item { return &item{} }
+
 func TestPool_GetAllocates(t *testing.T) {
-	p := New[*item]()
+	p := New(newItem)
 	got := p.Get()
 	if got == nil {
 		t.Fatal("Get returned nil")
@@ -31,7 +33,7 @@ func TestPool_GetAllocates(t *testing.T) {
 }
 
 func TestPool_PutResets(t *testing.T) {
-	p := New[*item]()
+	p := New(newItem)
 	v := p.Get()
 	v.n = 42
 	v.s = "hello"
@@ -45,7 +47,7 @@ func TestPool_PutResets(t *testing.T) {
 }
 
 func TestPool_PutNilIgnored(t *testing.T) {
-	p := New[*item]()
+	p := New(newItem)
 	p.Put(nil)
 	if p.Get() == nil {
 		t.Fatal("Get after Put(nil) returned nil")
@@ -53,7 +55,7 @@ func TestPool_PutNilIgnored(t *testing.T) {
 }
 
 func TestPool_Metrics(t *testing.T) {
-	p := New[*models.Metrics]()
+	p := New(func() *models.Metrics { return &models.Metrics{} })
 	m := p.Get()
 	m.ID = "Alloc"
 	m.MType = models.Gauge
@@ -71,7 +73,7 @@ func TestPool_Metrics(t *testing.T) {
 }
 
 func TestPool_Concurrent(t *testing.T) {
-	p := New[*item]()
+	p := New(newItem)
 	var wg sync.WaitGroup
 	for i := 0; i < 32; i++ {
 		wg.Add(1)

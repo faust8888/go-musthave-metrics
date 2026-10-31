@@ -11,17 +11,18 @@ import (
 	"time"
 
 	"github.com/faust8888/go-musthave-metrics/internal/agent"
+	"github.com/faust8888/go-musthave-metrics/internal/buildinfo"
 	"github.com/faust8888/go-musthave-metrics/internal/envconfig"
 )
 
 var (
-	buildVersion string
-	buildDate    string
-	buildCommit  string
+	buildVersion = "N/A"
+	buildDate    = "N/A"
+	buildCommit  = "N/A"
 )
 
 func main() {
-	printBuildInfo()
+	buildinfo.Print(buildVersion, buildDate, buildCommit)
 
 	addr := flag.String("a", "localhost:8080", "HTTP server address")
 	reportSec := flag.Int("r", 10, "report interval in seconds")
@@ -54,17 +55,4 @@ func main() {
 
 	agent.New(serverURL, *key, pollInterval, reportInterval, *rateLimit).Run(ctx)
 	log.Println("Agent stopped")
-}
-
-func printBuildInfo() {
-	fmt.Printf("Build version: %s\n", valueOrNA(buildVersion))
-	fmt.Printf("Build date: %s\n", valueOrNA(buildDate))
-	fmt.Printf("Build commit: %s\n", valueOrNA(buildCommit))
-}
-
-func valueOrNA(v string) string {
-	if v == "" {
-		return "N/A"
-	}
-	return v
 }
