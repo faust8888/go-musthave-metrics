@@ -15,13 +15,22 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/faust8888/go-musthave-metrics/internal/audit"
+	"github.com/faust8888/go-musthave-metrics/internal/buildinfo"
 	"github.com/faust8888/go-musthave-metrics/internal/envconfig"
 	"github.com/faust8888/go-musthave-metrics/internal/handler"
 	"github.com/faust8888/go-musthave-metrics/internal/middleware"
 	"github.com/faust8888/go-musthave-metrics/internal/repository"
 )
 
+var (
+	buildVersion = "N/A"
+	buildDate    = "N/A"
+	buildCommit  = "N/A"
+)
+
 func main() {
+	buildinfo.Print(buildVersion, buildDate, buildCommit)
+
 	addr := flag.String("a", "localhost:8080", "HTTP server address")
 	storeInterval := flag.Int("i", 300, "store interval in seconds (0 = sync)")
 	filePath := flag.String("f", "/tmp/metrics-db.json", "file storage path")

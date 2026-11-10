@@ -11,10 +11,19 @@ import (
 	"time"
 
 	"github.com/faust8888/go-musthave-metrics/internal/agent"
+	"github.com/faust8888/go-musthave-metrics/internal/buildinfo"
 	"github.com/faust8888/go-musthave-metrics/internal/envconfig"
 )
 
+var (
+	buildVersion = "N/A"
+	buildDate    = "N/A"
+	buildCommit  = "N/A"
+)
+
 func main() {
+	buildinfo.Print(buildVersion, buildDate, buildCommit)
+
 	addr := flag.String("a", "localhost:8080", "HTTP server address")
 	reportSec := flag.Int("r", 10, "report interval in seconds")
 	pollSec := flag.Int("p", 2, "poll interval in seconds")
