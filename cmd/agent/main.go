@@ -13,6 +13,7 @@ import (
 
 	"github.com/faust8888/go-musthave-metrics/internal/agent"
 	"github.com/faust8888/go-musthave-metrics/internal/buildinfo"
+	"github.com/faust8888/go-musthave-metrics/internal/config"
 	"github.com/faust8888/go-musthave-metrics/internal/cryptokey"
 	"github.com/faust8888/go-musthave-metrics/internal/envconfig"
 )
@@ -32,7 +33,24 @@ func main() {
 	key := flag.String("k", "", "hash key")
 	rateLimit := flag.Int("l", 1, "max concurrent outgoing requests")
 	cryptoKey := flag.String("crypto-key", "", "path to RSA public key PEM")
+	cfgPath := ""
+	flag.StringVar(&cfgPath, "c", "", "path to JSON config file")
+	flag.StringVar(&cfgPath, "config", "", "path to JSON config file")
 	flag.Parse()
+
+	visited := config.Visited()
+	envconfig.String("CONFIG", &cfgPath)
+
+	var file config.AgentFile
+	if err := config.Load(cfgPath, &file); err != nil {
+		log.Fatal(err)
+	}
+	config.Apply(addr, file.Address, visited, "a")
+	config.Apply(reportSec, file.ReportInterval.IntPtr(), visited, "r")
+	config.Apply(pollSec, file.PollInterval.IntPtr(), visited, "p")
+	config.Apply(key, file.Key, visited, "k")
+	config.Apply(rateLimit, file.RateLimit, visited, "l")
+	config.Apply(cryptoKey, file.CryptoKey, visited, "crypto-key")
 
 	envconfig.String("ADDRESS", addr)
 	envconfig.String("KEY", key)

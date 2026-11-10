@@ -17,6 +17,7 @@ import (
 
 	"github.com/faust8888/go-musthave-metrics/internal/audit"
 	"github.com/faust8888/go-musthave-metrics/internal/buildinfo"
+	"github.com/faust8888/go-musthave-metrics/internal/config"
 	"github.com/faust8888/go-musthave-metrics/internal/cryptokey"
 	"github.com/faust8888/go-musthave-metrics/internal/envconfig"
 	"github.com/faust8888/go-musthave-metrics/internal/handler"
@@ -42,9 +43,30 @@ func main() {
 	auditFile := flag.String("audit-file", "", "audit log file path")
 	auditURL := flag.String("audit-url", "", "audit HTTP endpoint")
 	cryptoKey := flag.String("crypto-key", "", "path to RSA private key PEM")
+	cfgPath := ""
+	flag.StringVar(&cfgPath, "c", "", "path to JSON config file")
+	flag.StringVar(&cfgPath, "config", "", "path to JSON config file")
 	flag.Parse()
 
+	visited := config.Visited()
+	envconfig.String("CONFIG", &cfgPath)
+
+	var file config.ServerFile
+	if err := config.Load(cfgPath, &file); err != nil {
+		log.Fatal(err)
+	}
+	config.Apply(addr, file.Address, visited, "a")
+	config.Apply(storeInterval, file.StoreInterval.IntPtr(), visited, "i")
+	config.Apply(filePath, file.StoreFile, visited, "f")
+	config.Apply(restore, file.Restore, visited, "r")
+	config.Apply(dsn, file.DatabaseDSN, visited, "d")
+	config.Apply(key, file.Key, visited, "k")
+	config.Apply(auditFile, file.AuditFile, visited, "audit-file")
+	config.Apply(auditURL, file.AuditURL, visited, "audit-url")
+	config.Apply(cryptoKey, file.CryptoKey, visited, "crypto-key")
+
 	envconfig.String("ADDRESS", addr)
+	envconfig.String("STORE_FILE", filePath)
 	envconfig.String("FILE_STORAGE_PATH", filePath)
 	envconfig.String("DATABASE_DSN", dsn)
 	envconfig.String("KEY", key)
