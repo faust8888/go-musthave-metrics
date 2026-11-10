@@ -3,6 +3,7 @@ package agent
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/rsa"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/faust8888/go-musthave-metrics/internal/cryptokey"
 	"github.com/faust8888/go-musthave-metrics/internal/hash"
 	models "github.com/faust8888/go-musthave-metrics/internal/model"
 	"github.com/faust8888/go-musthave-metrics/internal/retry"
@@ -27,25 +29,29 @@ type MetricsProvider interface {
 type Sender struct {
 	serverURL   string
 	key         string
+	pub         *rsa.PublicKey
 	client      *http.Client
 	retryDelays []time.Duration
 }
 
 // NewSender returns a sender for serverURL. A non-empty key signs request bodies.
-func NewSender(serverURL, key string) *Sender {
+// A non-nil pub encrypts the HTTP body with the server public key.
+func NewSender(serverURL, key string, pub *rsa.PublicKey) *Sender {
 	return &Sender{
 		serverURL:   serverURL,
 		key:         key,
+		pub:         pub,
 		client:      &http.Client{},
 		retryDelays: retry.DefaultDelays,
 	}
 }
 
 // NewSenderWithDelays is like NewSender but uses custom retry delays.
-func NewSenderWithDelays(serverURL, key string, delays []time.Duration) *Sender {
+func NewSenderWithDelays(serverURL, key string, pub *rsa.PublicKey, delays []time.Duration) *Sender {
 	return &Sender{
 		serverURL:   serverURL,
 		key:         key,
+		pub:         pub,
 		client:      &http.Client{},
 		retryDelays: delays,
 	}
@@ -83,13 +89,24 @@ func (s *Sender) postBatch(metrics []models.Metrics) error {
 }
 
 func (s *Sender) doPost(payload, raw []byte) error {
+	if s.pub != nil {
+		var err error
+		payload, err = cryptokey.Encrypt(s.pub, payload)
+		if err != nil {
+			return fmt.Errorf("encrypt body: %w", err)
+		}
+	}
 	req, err := http.NewRequest(http.MethodPost, s.serverURL+"/updates/", bytes.NewReader(payload))
 	if err != nil {
 		return err
 	}
+
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Content-Encoding", "gzip")
 	req.Header.Set("Accept-Encoding", "gzip")
+	if s.pub != nil {
+		req.Header.Set(cryptokey.Header, cryptokey.HeaderValue)
+	}
 	if s.key != "" {
 		req.Header.Set(hash.Header, hash.Sign(raw, s.key))
 	}
