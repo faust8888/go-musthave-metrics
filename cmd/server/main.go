@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rsa"
 	"database/sql"
 	"flag"
 	"log"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/faust8888/go-musthave-metrics/internal/audit"
 	"github.com/faust8888/go-musthave-metrics/internal/buildinfo"
+	"github.com/faust8888/go-musthave-metrics/internal/cryptokey"
 	"github.com/faust8888/go-musthave-metrics/internal/envconfig"
 	"github.com/faust8888/go-musthave-metrics/internal/handler"
 	"github.com/faust8888/go-musthave-metrics/internal/middleware"
@@ -39,6 +41,7 @@ func main() {
 	key := flag.String("k", "", "hash key")
 	auditFile := flag.String("audit-file", "", "audit log file path")
 	auditURL := flag.String("audit-url", "", "audit HTTP endpoint")
+	cryptoKey := flag.String("crypto-key", "", "path to RSA private key PEM")
 	flag.Parse()
 
 	envconfig.String("ADDRESS", addr)
@@ -47,6 +50,7 @@ func main() {
 	envconfig.String("KEY", key)
 	envconfig.String("AUDIT_FILE", auditFile)
 	envconfig.String("AUDIT_URL", auditURL)
+	envconfig.String("CRYPTO_KEY", cryptoKey)
 	if err := envconfig.Int("STORE_INTERVAL", storeInterval); err != nil {
 		log.Fatal(err)
 	}
@@ -86,7 +90,13 @@ func main() {
 	}
 	defer auditor.Close()
 
+	priv, err := loadPrivateKey(*cryptoKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	r := chi.NewRouter()
+	r.Use(middleware.DecryptRSA(priv))
 	r.Use(middleware.GzipDecompress)
 	r.Use(middleware.GzipCompress)
 	r.Use(middleware.Logger(logger))
@@ -117,4 +127,11 @@ func main() {
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
+}
+
+func loadPrivateKey(path string) (*rsa.PrivateKey, error) {
+	if path == "" {
+		return nil, nil
+	}
+	return cryptokey.LoadPrivate(path)
 }
