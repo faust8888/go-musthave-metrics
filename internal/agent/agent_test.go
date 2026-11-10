@@ -27,7 +27,7 @@ func TestAgent_Run_SendsMetrics(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	go agent.New(srv.URL, "", 20*time.Millisecond, 40*time.Millisecond, 1).Run(ctx)
+	go agent.New(srv.URL, "", 20*time.Millisecond, 40*time.Millisecond, 1, nil).Run(ctx)
 
 	select {
 	case <-received:
@@ -57,7 +57,7 @@ func TestAgent_Run_RateLimit(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	go agent.New(srv.URL, "", 10*time.Millisecond, 15*time.Millisecond, limit).Run(ctx)
+	go agent.New(srv.URL, "", 10*time.Millisecond, 15*time.Millisecond, limit, nil).Run(ctx)
 
 	time.Sleep(400 * time.Millisecond)
 	cancel()

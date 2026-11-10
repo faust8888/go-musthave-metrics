@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rsa"
 	"flag"
 	"fmt"
 	"log"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/faust8888/go-musthave-metrics/internal/agent"
 	"github.com/faust8888/go-musthave-metrics/internal/buildinfo"
+	"github.com/faust8888/go-musthave-metrics/internal/cryptokey"
 	"github.com/faust8888/go-musthave-metrics/internal/envconfig"
 )
 
@@ -29,10 +31,12 @@ func main() {
 	pollSec := flag.Int("p", 2, "poll interval in seconds")
 	key := flag.String("k", "", "hash key")
 	rateLimit := flag.Int("l", 1, "max concurrent outgoing requests")
+	cryptoKey := flag.String("crypto-key", "", "path to RSA public key PEM")
 	flag.Parse()
 
 	envconfig.String("ADDRESS", addr)
 	envconfig.String("KEY", key)
+	envconfig.String("CRYPTO_KEY", cryptoKey)
 	if err := envconfig.Int("REPORT_INTERVAL", reportSec); err != nil {
 		log.Fatal(err)
 	}
@@ -47,12 +51,24 @@ func main() {
 	pollInterval := time.Duration(*pollSec) * time.Second
 	reportInterval := time.Duration(*reportSec) * time.Second
 
+	publicKey, err := loadPublicKey(*cryptoKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	log.Printf("Agent started: server=%s poll=%ds report=%ds rate_limit=%d",
 		serverURL, *pollSec, *reportSec, *rateLimit)
 
-	agent.New(serverURL, *key, pollInterval, reportInterval, *rateLimit).Run(ctx)
+	agent.New(serverURL, *key, pollInterval, reportInterval, *rateLimit, publicKey).Run(ctx)
 	log.Println("Agent stopped")
+}
+
+func loadPublicKey(path string) (*rsa.PublicKey, error) {
+	if path == "" {
+		return nil, nil
+	}
+	return cryptokey.LoadPublic(path)
 }

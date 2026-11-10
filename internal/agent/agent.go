@@ -3,6 +3,7 @@ package agent
 
 import (
 	"context"
+	"crypto/rsa"
 	"log"
 	"sync"
 	"time"
@@ -21,14 +22,15 @@ type Agent struct {
 }
 
 // New creates an agent that polls every poll interval and reports every report
-// interval using at most rateLimit concurrent HTTP workers.
-func New(serverURL, key string, poll, report time.Duration, rateLimit int) *Agent {
+// interval using at most rateLimit concurrent HTTP workers. A non-nil pub
+// encrypts outgoing bodies with the server public key.
+func New(serverURL, key string, poll, report time.Duration, rateLimit int, pub *rsa.PublicKey) *Agent {
 	if rateLimit < 1 {
 		rateLimit = 1
 	}
 	return &Agent{
 		collector: NewCollector(),
-		sender:    NewSender(serverURL, key),
+		sender:    NewSender(serverURL, key, pub),
 		poll:      poll,
 		report:    report,
 		workers:   rateLimit,
