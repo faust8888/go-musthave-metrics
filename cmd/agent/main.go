@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -74,7 +73,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	defer cancel()
 
 	log.Printf("Agent started: server=%s poll=%ds report=%ds rate_limit=%d",

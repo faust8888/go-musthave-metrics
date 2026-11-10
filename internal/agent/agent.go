@@ -66,19 +66,22 @@ func (a *Agent) Run(ctx context.Context) {
 	}()
 
 	tick(ctx, a.report, func() {
-		job := a.collector.Snapshot()
-		if len(job) == 0 {
-			return
-		}
-		select {
-		case jobs <- job:
-		case <-ctx.Done():
-		}
+		enqueue(jobs, a.collector.Snapshot())
 	})
 
+	// Finish in-flight polls, then send whatever is still buffered so a
+	// shutdown signal does not drop metrics that were already collected.
+	collectors.Wait()
+	enqueue(jobs, a.collector.Snapshot())
 	close(jobs)
 	workers.Wait()
-	collectors.Wait()
+}
+
+func enqueue(jobs chan []models.Metrics, job []models.Metrics) {
+	if len(job) == 0 {
+		return
+	}
+	jobs <- job
 }
 
 func tick(ctx context.Context, d time.Duration, fn func()) {
