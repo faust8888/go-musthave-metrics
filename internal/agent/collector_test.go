@@ -1,7 +1,10 @@
 package agent_test
 
 import (
+	"bytes"
 	"compress/gzip"
+	"crypto/rand"
+	"crypto/rsa"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -11,7 +14,9 @@ import (
 	"time"
 
 	"github.com/faust8888/go-musthave-metrics/internal/agent"
+	"github.com/faust8888/go-musthave-metrics/internal/cryptokey"
 	"github.com/faust8888/go-musthave-metrics/internal/hash"
+	models "github.com/faust8888/go-musthave-metrics/internal/model"
 )
 
 func TestCollector_Collect_IncrementsPollCount(t *testing.T) {
@@ -137,7 +142,7 @@ func TestSender_Send(t *testing.T) {
 	c := agent.NewCollector()
 	c.Collect()
 
-	s := agent.NewSender(srv.URL, "")
+	s := agent.NewSender(srv.URL, "", nil)
 	if err := s.Send(c); err != nil {
 		t.Fatalf("Send() returned error: %v", err)
 	}
@@ -176,7 +181,7 @@ func TestSender_Send_Retry(t *testing.T) {
 	c.Collect()
 
 	// Use zero delays so the test finishes instantly.
-	s := agent.NewSenderWithDelays(srv.URL, "", []time.Duration{0, 0, 0})
+	s := agent.NewSenderWithDelays(srv.URL, "", nil, []time.Duration{0, 0, 0})
 	if err := s.Send(c); err != nil {
 		t.Fatalf("Send() failed after retries: %v", err)
 	}
@@ -215,7 +220,7 @@ func TestSender_Send_HashHeader(t *testing.T) {
 	c := agent.NewCollector()
 	c.Collect()
 
-	s := agent.NewSender(srv.URL, key)
+	s := agent.NewSender(srv.URL, key, nil)
 	if err := s.Send(c); err != nil {
 		t.Fatalf("Send() returned error: %v", err)
 	}
@@ -224,5 +229,61 @@ func TestSender_Send_HashHeader(t *testing.T) {
 	}
 	if !hash.Equal(gotHash, raw, key) {
 		t.Errorf("HashSHA256 does not match uncompressed body")
+	}
+}
+
+func TestSender_Send_Encrypted(t *testing.T) {
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var gotJSON []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get(cryptokey.Header) != cryptokey.HeaderValue {
+			t.Errorf("missing encryption header")
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		plain, err := cryptokey.Decrypt(priv, body)
+		if err != nil {
+			t.Errorf("decrypt: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		gr, err := gzip.NewReader(bytes.NewReader(plain))
+		if err != nil {
+			t.Errorf("gzip: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		defer gr.Close()
+		gotJSON, err = io.ReadAll(gr)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := agent.NewCollector()
+	c.Collect()
+	s := agent.NewSender(srv.URL, "", &priv.PublicKey)
+	if err := s.Send(c); err != nil {
+		t.Fatalf("Send() returned error: %v", err)
+	}
+	if len(gotJSON) == 0 {
+		t.Fatal("empty decrypted body")
+	}
+	var batch []models.Metrics
+	if err := json.Unmarshal(gotJSON, &batch); err != nil {
+		t.Fatalf("json: %v", err)
+	}
+	if len(batch) == 0 {
+		t.Fatal("empty metrics batch")
 	}
 }

@@ -1,6 +1,7 @@
 package retry
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -74,5 +75,37 @@ func TestDo_DelaysAreRespected(t *testing.T) {
 	// 3 retries × 10 ms = at least 30 ms
 	if elapsed < 30*time.Millisecond {
 		t.Errorf("delays not respected: elapsed %v, want ≥ 30ms", elapsed)
+	}
+}
+
+func TestDoContext_StopsOnCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	calls := 0
+	started := make(chan struct{})
+	done := make(chan error, 1)
+
+	go func() {
+		done <- DoContext(ctx, func() error {
+			calls++
+			if calls == 1 {
+				close(started)
+			}
+			return errRetriable
+		}, isRetriable, []time.Duration{time.Second, time.Second, time.Second})
+	}()
+
+	<-started
+	cancel()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, errRetriable) {
+			t.Fatalf("got %v, want last retriable error", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("DoContext did not return after cancel")
+	}
+	if calls != 1 {
+		t.Errorf("retries continued after cancel: calls=%d", calls)
 	}
 }
