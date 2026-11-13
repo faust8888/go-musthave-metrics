@@ -3,6 +3,7 @@ package agent
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/rsa"
 	"encoding/json"
 	"errors"
@@ -41,7 +42,7 @@ func NewSender(serverURL, key string, pub *rsa.PublicKey) *Sender {
 		serverURL:   serverURL,
 		key:         key,
 		pub:         pub,
-		client:      &http.Client{},
+		client:      &http.Client{Timeout: defaultHTTPTimeout},
 		retryDelays: retry.DefaultDelays,
 	}
 }
@@ -52,7 +53,7 @@ func NewSenderWithDelays(serverURL, key string, pub *rsa.PublicKey, delays []tim
 		serverURL:   serverURL,
 		key:         key,
 		pub:         pub,
-		client:      &http.Client{},
+		client:      &http.Client{Timeout: defaultHTTPTimeout},
 		retryDelays: delays,
 	}
 }
@@ -60,18 +61,18 @@ func NewSenderWithDelays(serverURL, key string, pub *rsa.PublicKey, delays []tim
 // Send collects all current metrics and posts them in a single batch request,
 // retrying on transient network errors.
 func (s *Sender) Send(c MetricsProvider) error {
-	return s.SendBatch(metricsFrom(c))
+	return s.SendBatch(context.Background(), metricsFrom(c))
 }
 
 // SendBatch posts the given metrics in one gzip-compressed request.
-func (s *Sender) SendBatch(metrics []models.Metrics) error {
+func (s *Sender) SendBatch(ctx context.Context, metrics []models.Metrics) error {
 	if len(metrics) == 0 {
 		return nil
 	}
-	return s.postBatch(metrics)
+	return s.postBatch(ctx, metrics)
 }
 
-func (s *Sender) postBatch(metrics []models.Metrics) error {
+func (s *Sender) postBatch(ctx context.Context, metrics []models.Metrics) error {
 	// Build the compressed payload once; reuse across retries.
 	// Hash is computed over the uncompressed JSON so it matches the server,
 	// which verifies the body after gzip decompression.
@@ -83,12 +84,12 @@ func (s *Sender) postBatch(metrics []models.Metrics) error {
 	if err != nil {
 		return err
 	}
-	return retry.Do(func() error {
-		return s.doPost(payload, raw)
+	return retry.DoContext(ctx, func() error {
+		return s.doPost(ctx, payload, raw)
 	}, isNetworkError, s.retryDelays)
 }
 
-func (s *Sender) doPost(payload, raw []byte) error {
+func (s *Sender) doPost(ctx context.Context, payload, raw []byte) error {
 	if s.pub != nil {
 		var err error
 		payload, err = cryptokey.Encrypt(s.pub, payload)
@@ -96,7 +97,7 @@ func (s *Sender) doPost(payload, raw []byte) error {
 			return fmt.Errorf("encrypt body: %w", err)
 		}
 	}
-	req, err := http.NewRequest(http.MethodPost, s.serverURL+"/updates/", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.serverURL+"/updates/", bytes.NewReader(payload))
 	if err != nil {
 		return err
 	}
@@ -154,6 +155,9 @@ func gzipBytes(raw []byte) ([]byte, error) {
 }
 
 func isNetworkError(err error) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
 	var urlErr *url.Error
 	return errors.As(err, &urlErr)
 }
