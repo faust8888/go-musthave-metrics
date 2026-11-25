@@ -27,7 +27,7 @@ func TestAgent_Run_SendsMetrics(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	go agent.New(srv.URL, "", 20*time.Millisecond, 40*time.Millisecond, 1).Run(ctx)
+	go agent.New(srv.URL, "", 20*time.Millisecond, 40*time.Millisecond, 1, nil).Run(ctx)
 
 	select {
 	case <-received:
@@ -57,7 +57,7 @@ func TestAgent_Run_RateLimit(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	go agent.New(srv.URL, "", 10*time.Millisecond, 15*time.Millisecond, limit).Run(ctx)
+	go agent.New(srv.URL, "", 10*time.Millisecond, 15*time.Millisecond, limit, nil).Run(ctx)
 
 	time.Sleep(400 * time.Millisecond)
 	cancel()
@@ -68,5 +68,36 @@ func TestAgent_Run_RateLimit(t *testing.T) {
 	}
 	if got > limit {
 		t.Errorf("max concurrent requests: got %d, want <= %d", got, limit)
+	}
+}
+
+func TestAgent_Run_FlushOnShutdown(t *testing.T) {
+	var got atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/updates/" {
+			got.Add(1)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		// Report interval is too long to fire; shutdown must still flush.
+		agent.New(srv.URL, "", 10*time.Millisecond, time.Hour, 1, nil).Run(ctx)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("agent did not stop after cancel")
+	}
+	if got.Load() == 0 {
+		t.Fatal("expected collected metrics to be sent on shutdown")
 	}
 }

@@ -34,8 +34,16 @@ func newStorage(ctx context.Context, db *sql.DB, filePath string, storeInterval 
 		}
 	}
 
+	save := func() {
+		if err := fs.Save(); err != nil {
+			logger.Error("failed to save metrics on shutdown", zap.Error(err))
+		} else {
+			logger.Info("metrics saved", zap.String("path", filePath))
+		}
+	}
+
 	if storeInterval <= 0 {
-		return fs, func() {}
+		return fs, save
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -61,5 +69,6 @@ func newStorage(ctx context.Context, db *sql.DB, filePath string, storeInterval 
 	return fs, func() {
 		cancel()
 		<-done
+		save()
 	}
 }

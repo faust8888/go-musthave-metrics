@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rsa"
 	"database/sql"
 	"flag"
 	"log"
@@ -16,6 +17,8 @@ import (
 
 	"github.com/faust8888/go-musthave-metrics/internal/audit"
 	"github.com/faust8888/go-musthave-metrics/internal/buildinfo"
+	"github.com/faust8888/go-musthave-metrics/internal/config"
+	"github.com/faust8888/go-musthave-metrics/internal/cryptokey"
 	"github.com/faust8888/go-musthave-metrics/internal/envconfig"
 	"github.com/faust8888/go-musthave-metrics/internal/handler"
 	"github.com/faust8888/go-musthave-metrics/internal/middleware"
@@ -39,14 +42,37 @@ func main() {
 	key := flag.String("k", "", "hash key")
 	auditFile := flag.String("audit-file", "", "audit log file path")
 	auditURL := flag.String("audit-url", "", "audit HTTP endpoint")
+	cryptoKey := flag.String("crypto-key", "", "path to RSA private key PEM")
+	cfgPath := ""
+	flag.StringVar(&cfgPath, "c", "", "path to JSON config file")
+	flag.StringVar(&cfgPath, "config", "", "path to JSON config file")
 	flag.Parse()
 
+	visited := config.Visited()
+	envconfig.String("CONFIG", &cfgPath)
+
+	var file config.ServerFile
+	if err := config.Load(cfgPath, &file); err != nil {
+		log.Fatal(err)
+	}
+	config.Apply(addr, file.Address, visited, "a")
+	config.Apply(storeInterval, file.StoreInterval.IntPtr(), visited, "i")
+	config.Apply(filePath, file.StoreFile, visited, "f")
+	config.Apply(restore, file.Restore, visited, "r")
+	config.Apply(dsn, file.DatabaseDSN, visited, "d")
+	config.Apply(key, file.Key, visited, "k")
+	config.Apply(auditFile, file.AuditFile, visited, "audit-file")
+	config.Apply(auditURL, file.AuditURL, visited, "audit-url")
+	config.Apply(cryptoKey, file.CryptoKey, visited, "crypto-key")
+
 	envconfig.String("ADDRESS", addr)
+	envconfig.String("STORE_FILE", filePath)
 	envconfig.String("FILE_STORAGE_PATH", filePath)
 	envconfig.String("DATABASE_DSN", dsn)
 	envconfig.String("KEY", key)
 	envconfig.String("AUDIT_FILE", auditFile)
 	envconfig.String("AUDIT_URL", auditURL)
+	envconfig.String("CRYPTO_KEY", cryptoKey)
 	if err := envconfig.Int("STORE_INTERVAL", storeInterval); err != nil {
 		log.Fatal(err)
 	}
@@ -60,7 +86,7 @@ func main() {
 	}
 	defer logger.Sync()
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	defer stop()
 
 	var db *sql.DB
@@ -86,7 +112,13 @@ func main() {
 	}
 	defer auditor.Close()
 
+	priv, err := loadPrivateKey(*cryptoKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	r := chi.NewRouter()
+	r.Use(middleware.DecryptRSA(priv))
 	r.Use(middleware.GzipDecompress)
 	r.Use(middleware.GzipCompress)
 	r.Use(middleware.Logger(logger))
@@ -106,7 +138,7 @@ func main() {
 
 	go func() {
 		<-ctx.Done()
-		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(shutCtx); err != nil {
 			logger.Error("shutdown error", zap.Error(err))
@@ -117,4 +149,11 @@ func main() {
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
+}
+
+func loadPrivateKey(path string) (*rsa.PrivateKey, error) {
+	if path == "" {
+		return nil, nil
+	}
+	return cryptokey.LoadPrivate(path)
 }
