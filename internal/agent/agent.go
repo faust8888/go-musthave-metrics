@@ -19,12 +19,13 @@ const (
 // Agent polls runtime and gopsutil metrics in separate goroutines and sends
 // snapshots through a worker pool limited by rateLimit concurrent requests.
 type Agent struct {
-	collector *Collector
-	sender    *Sender
-	poll      time.Duration
-	report    time.Duration
-	workers   int
-	drain     time.Duration
+	collector  *Collector
+	sender     *Sender
+	grpcSender *GRPCSender
+	poll       time.Duration
+	report     time.Duration
+	workers    int
+	drain      time.Duration
 }
 
 // New creates an agent that polls every poll interval and reports every report
@@ -44,10 +45,32 @@ func New(serverURL, key string, poll, report time.Duration, rateLimit int, pub *
 	}
 }
 
+// NewGRPC creates an agent that sends metric batches to a gRPC server.
+func NewGRPC(address string, poll, report time.Duration, rateLimit int) (*Agent, error) {
+	if rateLimit < 1 {
+		rateLimit = 1
+	}
+	sender, err := NewGRPCSender(address)
+	if err != nil {
+		return nil, err
+	}
+	return &Agent{
+		collector:  NewCollector(),
+		grpcSender: sender,
+		poll:       poll,
+		report:     report,
+		workers:    rateLimit,
+		drain:      defaultDrainTimeout,
+	}, nil
+}
+
 // Run starts collectors, a reporter and a worker pool, and blocks until ctx is done.
 // After a signal it still tries to deliver buffered metrics, but the wait is
-// bounded by drain so a stuck HTTP call cannot hang the process.
+// bounded by drain so a stuck outgoing request cannot hang the process.
 func (a *Agent) Run(ctx context.Context) {
+	if a.grpcSender != nil {
+		defer a.grpcSender.Close()
+	}
 	jobs := make(chan []models.Metrics, a.workers)
 
 	sendCtx, stopSend := context.WithCancel(context.Background())
@@ -59,7 +82,13 @@ func (a *Agent) Run(ctx context.Context) {
 		go func() {
 			defer workers.Done()
 			for job := range jobs {
-				if err := a.sender.SendBatch(sendCtx, job); err != nil {
+				var err error
+				if a.grpcSender != nil {
+					err = a.grpcSender.SendBatch(sendCtx, job)
+				} else {
+					err = a.sender.SendBatch(sendCtx, job)
+				}
+				if err != nil {
 					log.Printf("send metrics error: %v", err)
 				}
 			}

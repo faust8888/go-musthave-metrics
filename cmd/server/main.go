@@ -23,7 +23,10 @@ import (
 	"github.com/faust8888/go-musthave-metrics/internal/envconfig"
 	"github.com/faust8888/go-musthave-metrics/internal/handler"
 	"github.com/faust8888/go-musthave-metrics/internal/middleware"
+	metricspb "github.com/faust8888/go-musthave-metrics/internal/proto"
 	"github.com/faust8888/go-musthave-metrics/internal/repository"
+	"github.com/faust8888/go-musthave-metrics/internal/service"
+	"google.golang.org/grpc"
 )
 
 var (
@@ -45,6 +48,8 @@ func main() {
 	auditURL := flag.String("audit-url", "", "audit HTTP endpoint")
 	cryptoKey := flag.String("crypto-key", "", "path to RSA private key PEM")
 	trustedSubnet := flag.String("t", "", "trusted agent subnet in CIDR notation")
+	grpcAddress := flag.String("g", "localhost:3200", "gRPC server address")
+	flag.StringVar(grpcAddress, "grpc-address", "localhost:3200", "gRPC server address")
 	cfgPath := ""
 	flag.StringVar(&cfgPath, "c", "", "path to JSON config file")
 	flag.StringVar(&cfgPath, "config", "", "path to JSON config file")
@@ -67,6 +72,7 @@ func main() {
 	config.Apply(auditURL, file.AuditURL, visited, "audit-url")
 	config.Apply(cryptoKey, file.CryptoKey, visited, "crypto-key")
 	config.Apply(trustedSubnet, file.TrustedSubnet, visited, "t")
+	config.Apply(grpcAddress, file.GRPCAddress, visited, "g", "grpc-address")
 
 	envconfig.String("ADDRESS", addr)
 	envconfig.String("STORE_FILE", filePath)
@@ -77,6 +83,7 @@ func main() {
 	envconfig.String("AUDIT_URL", auditURL)
 	envconfig.String("CRYPTO_KEY", cryptoKey)
 	envconfig.String("TRUSTED_SUBNET", trustedSubnet)
+	envconfig.String("GRPC_ADDRESS", grpcAddress)
 	if err := envconfig.Int("STORE_INTERVAL", storeInterval); err != nil {
 		log.Fatal(err)
 	}
@@ -128,6 +135,17 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	grpcListener, err := net.Listen("tcp", *grpcAddress)
+	if err != nil {
+		log.Fatalf("gRPC listen: %v", err)
+	}
+	grpcServer := grpc.NewServer(grpc.UnaryInterceptor(middleware.TrustedSubnetUnaryInterceptor(trustedIPNet)))
+	metricspb.RegisterMetricsServer(grpcServer, service.NewGRPCMetricsService(store))
+	go func() {
+		if err := grpcServer.Serve(grpcListener); err != nil && err != grpc.ErrServerStopped {
+			logger.Error("gRPC server stopped", zap.Error(err))
+		}
+	}()
 
 	r := chi.NewRouter()
 	r.Use(middleware.DecryptRSA(priv))
@@ -158,9 +176,10 @@ func main() {
 		if err := srv.Shutdown(shutCtx); err != nil {
 			logger.Error("shutdown error", zap.Error(err))
 		}
+		grpcServer.GracefulStop()
 	}()
 
-	logger.Info("Server started", zap.String("address", *addr))
+	logger.Info("Server started", zap.String("address", *addr), zap.String("grpc_address", *grpcAddress))
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
