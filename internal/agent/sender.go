@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"sync"
@@ -101,8 +102,13 @@ func (s *Sender) doPost(ctx context.Context, payload, raw []byte) error {
 	if err != nil {
 		return err
 	}
+	localIP, err := localIPForServer(req.URL.Host)
+	if err != nil {
+		return fmt.Errorf("determine agent IP: %w", err)
+	}
 
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Real-IP", localIP)
 	req.Header.Set("Content-Encoding", "gzip")
 	req.Header.Set("Accept-Encoding", "gzip")
 	if s.pub != nil {
@@ -119,6 +125,19 @@ func (s *Sender) doPost(ctx context.Context, payload, raw []byte) error {
 	defer resp.Body.Close()
 	_, err = io.Copy(io.Discard, resp.Body)
 	return err
+}
+
+func localIPForServer(server string) (string, error) {
+	conn, err := net.Dial("udp", server)
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close()
+	addr, ok := conn.LocalAddr().(*net.UDPAddr)
+	if !ok {
+		return "", fmt.Errorf("unexpected local address type %T", conn.LocalAddr())
+	}
+	return addr.IP.String(), nil
 }
 
 var gzipWriterPool = sync.Pool{

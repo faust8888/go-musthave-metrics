@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"flag"
 	"log"
+	"net"
 	"net/http"
 	"os/signal"
 	"syscall"
@@ -43,6 +44,7 @@ func main() {
 	auditFile := flag.String("audit-file", "", "audit log file path")
 	auditURL := flag.String("audit-url", "", "audit HTTP endpoint")
 	cryptoKey := flag.String("crypto-key", "", "path to RSA private key PEM")
+	trustedSubnet := flag.String("t", "", "trusted agent subnet in CIDR notation")
 	cfgPath := ""
 	flag.StringVar(&cfgPath, "c", "", "path to JSON config file")
 	flag.StringVar(&cfgPath, "config", "", "path to JSON config file")
@@ -64,6 +66,7 @@ func main() {
 	config.Apply(auditFile, file.AuditFile, visited, "audit-file")
 	config.Apply(auditURL, file.AuditURL, visited, "audit-url")
 	config.Apply(cryptoKey, file.CryptoKey, visited, "crypto-key")
+	config.Apply(trustedSubnet, file.TrustedSubnet, visited, "t")
 
 	envconfig.String("ADDRESS", addr)
 	envconfig.String("STORE_FILE", filePath)
@@ -73,11 +76,20 @@ func main() {
 	envconfig.String("AUDIT_FILE", auditFile)
 	envconfig.String("AUDIT_URL", auditURL)
 	envconfig.String("CRYPTO_KEY", cryptoKey)
+	envconfig.String("TRUSTED_SUBNET", trustedSubnet)
 	if err := envconfig.Int("STORE_INTERVAL", storeInterval); err != nil {
 		log.Fatal(err)
 	}
 	if err := envconfig.Bool("RESTORE", restore); err != nil {
 		log.Fatal(err)
+	}
+	var trustedIPNet *net.IPNet
+	if *trustedSubnet != "" {
+		_, parsedSubnet, err := net.ParseCIDR(*trustedSubnet)
+		if err != nil {
+			log.Fatalf("invalid trusted subnet %q: %v", *trustedSubnet, err)
+		}
+		trustedIPNet = parsedSubnet
 	}
 
 	logger, err := zap.NewProduction()
@@ -126,11 +138,14 @@ func main() {
 
 	r.Get("/ping", handler.Ping(db))
 	r.Get("/", handler.Index(store))
-	r.Post("/update/{type}/{name}/{value}", handler.Update(store, auditor))
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.TrustedSubnet(trustedIPNet))
+		r.Post("/update/{type}/{name}/{value}", handler.Update(store, auditor))
+		r.Post("/update", handler.UpdateJSON(store, auditor))
+		r.Post("/update/", handler.UpdateJSON(store, auditor))
+		r.Post("/updates/", handler.UpdatesBatch(store, auditor))
+	})
 	r.Get("/value/{type}/{name}", handler.Value(store))
-	r.Post("/update", handler.UpdateJSON(store, auditor))
-	r.Post("/update/", handler.UpdateJSON(store, auditor))
-	r.Post("/updates/", handler.UpdatesBatch(store, auditor))
 	r.Post("/value", handler.ValueJSON(store))
 	r.Post("/value/", handler.ValueJSON(store))
 
