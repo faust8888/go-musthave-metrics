@@ -19,6 +19,7 @@ type ServerFile struct {
 	Key           *string      `json:"key"`
 	AuditFile     *string      `json:"audit_file"`
 	AuditURL      *string      `json:"audit_url"`
+	TrustedSubnet *string      `json:"trusted_subnet"`
 }
 
 // AgentFile is the JSON configuration overlay for the agent.
