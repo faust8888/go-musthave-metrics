@@ -2,29 +2,54 @@ package agent
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"net"
+	"os"
 
 	models "github.com/faust8888/go-musthave-metrics/internal/model"
 	metricspb "github.com/faust8888/go-musthave-metrics/internal/proto"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 )
 
 // GRPCSender sends metric batches to a Metrics gRPC service.
 type GRPCSender struct {
-	address string
-	conn    *grpc.ClientConn
-	client  metricspb.MetricsClient
+	conn   *grpc.ClientConn
+	client metricspb.MetricsClient
+	ip     string
 }
 
-// NewGRPCSender creates a sender for address using plaintext transport.
-func NewGRPCSender(address string) (*GRPCSender, error) {
-	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+// NewGRPCSender creates a TLS sender that trusts the certificate at caPath.
+func NewGRPCSender(address, caPath string) (*GRPCSender, error) {
+	caPEM, err := os.ReadFile(caPath)
+	if err != nil {
+		return nil, fmt.Errorf("read gRPC CA certificate: %w", err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caPEM) {
+		return nil, fmt.Errorf("invalid gRPC CA certificate")
+	}
+	serverName, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, fmt.Errorf("invalid gRPC address: %w", err)
+	}
+	if ip := net.ParseIP(serverName); ip != nil && ip.IsLoopback() {
+		serverName = "localhost"
+	}
+	creds := credentials.NewTLS(&tls.Config{RootCAs: pool, ServerName: serverName, MinVersion: tls.VersionTLS12})
+	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(creds))
 	if err != nil {
 		return nil, fmt.Errorf("create gRPC connection: %w", err)
 	}
-	return &GRPCSender{address: address, conn: conn, client: metricspb.NewMetricsClient(conn)}, nil
+	ip, err := localIPForServer(address)
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("determine agent IP: %w", err)
+	}
+	return &GRPCSender{conn: conn, client: metricspb.NewMetricsClient(conn), ip: ip}, nil
 }
 
 // SendBatch sends metrics in one UpdateMetrics RPC and includes the selected
@@ -33,32 +58,30 @@ func (s *GRPCSender) SendBatch(ctx context.Context, metrics []models.Metrics) er
 	if len(metrics) == 0 {
 		return nil
 	}
-	ip, err := localIPForServer(s.address)
-	if err != nil {
-		return fmt.Errorf("determine agent IP: %w", err)
-	}
-	request := &metricspb.UpdateMetricsRequest{Metrics: make([]*metricspb.Metric, 0, len(metrics))}
+	request := &metricspb.UpdateMetricsRequest{}
+	request.SetMetrics(make([]*metricspb.Metric, 0, len(metrics)))
 	for _, metric := range metrics {
-		converted := &metricspb.Metric{Id: metric.ID}
+		converted := &metricspb.Metric{}
+		converted.SetId(metric.ID)
 		switch metric.MType {
 		case models.Gauge:
-			converted.Type = metricspb.Metric_GAUGE
+			converted.SetType(metricspb.Metric_GAUGE)
 			if metric.Value != nil {
-				converted.Value = *metric.Value
+				converted.SetValue(*metric.Value)
 			}
 		case models.Counter:
-			converted.Type = metricspb.Metric_COUNTER
+			converted.SetType(metricspb.Metric_COUNTER)
 			if metric.Delta != nil {
-				converted.Delta = *metric.Delta
+				converted.SetDelta(*metric.Delta)
 			}
 		default:
 			return fmt.Errorf("unsupported metric type %q", metric.MType)
 		}
-		request.Metrics = append(request.Metrics, converted)
+		request.SetMetrics(append(request.GetMetrics(), converted))
 	}
 	ctx, cancel := context.WithTimeout(ctx, defaultHTTPTimeout)
 	defer cancel()
-	ctx = metadata.AppendToOutgoingContext(ctx, "x-real-ip", ip)
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-real-ip", s.ip)
 	if _, err := s.client.UpdateMetrics(ctx, request); err != nil {
 		return fmt.Errorf("update metrics over gRPC: %w", err)
 	}

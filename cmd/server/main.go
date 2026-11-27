@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/credentials"
 
 	"github.com/faust8888/go-musthave-metrics/internal/audit"
 	"github.com/faust8888/go-musthave-metrics/internal/buildinfo"
@@ -49,6 +50,8 @@ func main() {
 	cryptoKey := flag.String("crypto-key", "", "path to RSA private key PEM")
 	trustedSubnet := flag.String("t", "", "trusted agent subnet in CIDR notation")
 	grpcAddress := flag.String("g", "localhost:3200", "gRPC server address")
+	grpcTLSCert := flag.String("grpc-tls-cert", "", "gRPC TLS certificate file")
+	grpcTLSKey := flag.String("grpc-tls-key", "", "gRPC TLS private key file")
 	flag.StringVar(grpcAddress, "grpc-address", "localhost:3200", "gRPC server address")
 	cfgPath := ""
 	flag.StringVar(&cfgPath, "c", "", "path to JSON config file")
@@ -73,6 +76,8 @@ func main() {
 	config.Apply(cryptoKey, file.CryptoKey, visited, "crypto-key")
 	config.Apply(trustedSubnet, file.TrustedSubnet, visited, "t")
 	config.Apply(grpcAddress, file.GRPCAddress, visited, "g", "grpc-address")
+	config.Apply(grpcTLSCert, file.GRPCTLSCert, visited, "grpc-tls-cert")
+	config.Apply(grpcTLSKey, file.GRPCTLSKey, visited, "grpc-tls-key")
 
 	envconfig.String("ADDRESS", addr)
 	envconfig.String("STORE_FILE", filePath)
@@ -84,6 +89,8 @@ func main() {
 	envconfig.String("CRYPTO_KEY", cryptoKey)
 	envconfig.String("TRUSTED_SUBNET", trustedSubnet)
 	envconfig.String("GRPC_ADDRESS", grpcAddress)
+	envconfig.String("GRPC_TLS_CERT", grpcTLSCert)
+	envconfig.String("GRPC_TLS_KEY", grpcTLSKey)
 	if err := envconfig.Int("STORE_INTERVAL", storeInterval); err != nil {
 		log.Fatal(err)
 	}
@@ -139,7 +146,19 @@ func main() {
 	if err != nil {
 		log.Fatalf("gRPC listen: %v", err)
 	}
-	grpcServer := grpc.NewServer(grpc.UnaryInterceptor(middleware.TrustedSubnetUnaryInterceptor(trustedIPNet)))
+	grpcOptions := []grpc.ServerOption{}
+	if trustedIPNet != nil {
+		grpcOptions = append(grpcOptions, grpc.UnaryInterceptor(middleware.TrustedSubnetUnaryInterceptor(trustedIPNet)))
+	}
+	if *grpcTLSCert == "" || *grpcTLSKey == "" {
+		log.Fatal("gRPC TLS certificate and key are required")
+	}
+	creds, err := credentials.NewServerTLSFromFile(*grpcTLSCert, *grpcTLSKey)
+	if err != nil {
+		log.Fatalf("gRPC TLS: %v", err)
+	}
+	grpcOptions = append(grpcOptions, grpc.Creds(creds))
+	grpcServer := grpc.NewServer(grpcOptions...)
 	metricspb.RegisterMetricsServer(grpcServer, service.NewGRPCMetricsService(store))
 	go func() {
 		if err := grpcServer.Serve(grpcListener); err != nil && err != grpc.ErrServerStopped {
@@ -157,7 +176,9 @@ func main() {
 	r.Get("/ping", handler.Ping(db))
 	r.Get("/", handler.Index(store))
 	r.Group(func(r chi.Router) {
-		r.Use(middleware.TrustedSubnet(trustedIPNet))
+		if trustedIPNet != nil {
+			r.Use(middleware.TrustedSubnet(trustedIPNet))
+		}
 		r.Post("/update/{type}/{name}/{value}", handler.Update(store, auditor))
 		r.Post("/update", handler.UpdateJSON(store, auditor))
 		r.Post("/update/", handler.UpdateJSON(store, auditor))
@@ -173,10 +194,27 @@ func main() {
 		<-ctx.Done()
 		shutCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if err := srv.Shutdown(shutCtx); err != nil {
-			logger.Error("shutdown error", zap.Error(err))
+		shutdownDone := make(chan struct{})
+		go func() {
+			defer close(shutdownDone)
+			if err := srv.Shutdown(shutCtx); err != nil {
+				logger.Error("HTTP shutdown error", zap.Error(err))
+			}
+		}()
+		grpcDone := make(chan struct{})
+		go func() { defer close(grpcDone); grpcServer.GracefulStop() }()
+		select {
+		case <-grpcDone:
+		case <-shutCtx.Done():
+			grpcServer.Stop()
 		}
-		grpcServer.GracefulStop()
+		select {
+		case <-shutdownDone:
+		case <-shutCtx.Done():
+		}
+		if err := shutCtx.Err(); err != nil {
+			logger.Error("shutdown deadline exceeded", zap.Error(err))
+		}
 	}()
 
 	logger.Info("Server started", zap.String("address", *addr), zap.String("grpc_address", *grpcAddress))

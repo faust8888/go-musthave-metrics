@@ -19,7 +19,7 @@ func TrustedSubnetUnaryInterceptor(subnet *net.IPNet) grpc.UnaryServerIntercepto
 		}
 		md, ok := metadata.FromIncomingContext(ctx)
 		if !ok || len(md.Get("x-real-ip")) == 0 {
-			return nil, status.Error(codes.PermissionDenied, "agent IP is outside trusted subnet")
+			return nil, status.Error(codes.PermissionDenied, "missing x-real-ip metadata")
 		}
 		ip := net.ParseIP(md.Get("x-real-ip")[0])
 		if ip == nil || !subnet.Contains(ip) {

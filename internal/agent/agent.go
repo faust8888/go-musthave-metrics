@@ -46,11 +46,11 @@ func New(serverURL, key string, poll, report time.Duration, rateLimit int, pub *
 }
 
 // NewGRPC creates an agent that sends metric batches to a gRPC server.
-func NewGRPC(address string, poll, report time.Duration, rateLimit int) (*Agent, error) {
+func NewGRPC(address, caPath string, poll, report time.Duration, rateLimit int) (*Agent, error) {
 	if rateLimit < 1 {
 		rateLimit = 1
 	}
-	sender, err := NewGRPCSender(address)
+	sender, err := NewGRPCSender(address, caPath)
 	if err != nil {
 		return nil, err
 	}

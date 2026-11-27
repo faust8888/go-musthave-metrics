@@ -32,6 +32,7 @@ func main() {
 	rateLimit := flag.Int("l", 1, "max concurrent outgoing requests")
 	cryptoKey := flag.String("crypto-key", "", "path to RSA public key PEM")
 	grpcAddress := flag.String("g", "localhost:3200", "gRPC server address")
+	grpcTLSCA := flag.String("grpc-tls-ca", "", "trusted gRPC server certificate (PEM)")
 	flag.StringVar(grpcAddress, "grpc-address", "localhost:3200", "gRPC server address")
 	cfgPath := ""
 	flag.StringVar(&cfgPath, "c", "", "path to JSON config file")
@@ -52,6 +53,8 @@ func main() {
 	config.Apply(rateLimit, file.RateLimit, visited, "l")
 	config.Apply(cryptoKey, file.CryptoKey, visited, "crypto-key")
 	config.Apply(grpcAddress, file.GRPCAddress, visited, "g", "grpc-address")
+	config.Apply(grpcTLSCA, file.GRPCTLSCA, visited, "grpc-tls-ca")
+	envconfig.String("GRPC_TLS_CA", grpcTLSCA)
 
 	envconfig.String("ADDRESS", addr)
 	envconfig.String("KEY", key)
@@ -76,7 +79,7 @@ func main() {
 	log.Printf("Agent started: grpc_server=%s poll=%ds report=%ds rate_limit=%d",
 		*grpcAddress, *pollSec, *reportSec, *rateLimit)
 
-	grpcAgent, err := agent.NewGRPC(*grpcAddress, pollInterval, reportInterval, *rateLimit)
+	grpcAgent, err := agent.NewGRPC(*grpcAddress, *grpcTLSCA, pollInterval, reportInterval, *rateLimit)
 	if err != nil {
 		log.Fatal(err)
 	}

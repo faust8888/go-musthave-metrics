@@ -1,4 +1,6 @@
-syntax = "proto3";
+edition = "2023";
+
+option features.field_presence = IMPLICIT;
 
 package metrics;
 

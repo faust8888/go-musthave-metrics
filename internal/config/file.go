@@ -21,12 +21,15 @@ type ServerFile struct {
 	AuditURL      *string      `json:"audit_url"`
 	TrustedSubnet *string      `json:"trusted_subnet"`
 	GRPCAddress   *string      `json:"grpc_address"`
+	GRPCTLSCert   *string      `json:"grpc_tls_cert"`
+	GRPCTLSKey    *string      `json:"grpc_tls_key"`
 }
 
 // AgentFile is the JSON configuration overlay for the agent.
 type AgentFile struct {
 	Address        *string      `json:"address"`
 	GRPCAddress    *string      `json:"grpc_address"`
+	GRPCTLSCA      *string      `json:"grpc_tls_ca"`
 	ReportInterval *DurationSec `json:"report_interval"`
 	PollInterval   *DurationSec `json:"poll_interval"`
 	CryptoKey      *string      `json:"crypto_key"`
