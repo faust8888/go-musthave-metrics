@@ -2,11 +2,13 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 
 	models "github.com/faust8888/go-musthave-metrics/internal/model"
 	"github.com/faust8888/go-musthave-metrics/internal/repository"
+	"github.com/faust8888/go-musthave-metrics/internal/service"
 )
 
 // UpdatesBatch handles POST /updates/ and stores a JSON array of metrics.
@@ -26,24 +28,12 @@ func UpdatesBatch(store repository.Storage, auditor Auditor) http.HandlerFunc {
 			http.Error(w, "empty batch", http.StatusBadRequest)
 			return
 		}
-		for _, m := range metrics {
-			switch m.MType {
-			case models.Gauge:
-				if m.Value == nil {
-					http.Error(w, "value is required for gauge", http.StatusBadRequest)
-					return
-				}
-			case models.Counter:
-				if m.Delta == nil {
-					http.Error(w, "delta is required for counter", http.StatusBadRequest)
-					return
-				}
-			default:
-				http.Error(w, "invalid metric type: "+m.MType, http.StatusBadRequest)
+		if err := service.StoreMetrics(r.Context(), store, metrics); err != nil {
+			var validationErr *service.ValidationError
+			if errors.As(err, &validationErr) {
+				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-		}
-		if err := store.UpdateBatch(r.Context(), metrics); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
